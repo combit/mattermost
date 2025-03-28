@@ -242,7 +242,7 @@ export default class Renderer extends marked.Renderer {
             // style it properly. We need to use a CSS counter to tell the ::before elements which numbers to show.
             output += ` style="counter-reset: list ${start - 1}"`;
         }
-        output += `>\n${content}</${type}>`;
+        output += `>${content}</${type}>`;
 
         return output;
     }
@@ -273,7 +273,7 @@ export default class Renderer extends marked.Renderer {
 
 // Marked helper functions that should probably just be exported
 
-function unescapeHtmlEntities(html: string) {
+export function unescapeHtmlEntities(html: string) {
     return html.replace(/&([#\w]+);/g, (_, m) => {
         const n = m.toLowerCase();
         if (n === 'colon') {

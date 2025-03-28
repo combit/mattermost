@@ -10,6 +10,8 @@ import {Link} from 'react-router-dom';
 import type {ClientConfig, WarnMetricStatus} from '@mattermost/types/config';
 import type {PreferenceType} from '@mattermost/types/preferences';
 
+import type {ActionResult} from 'mattermost-redux/types/actions';
+
 import {trackEvent} from 'actions/telemetry_actions';
 
 import PurchaseLink from 'components/announcement_bar/purchase_link/purchase_link';
@@ -18,7 +20,6 @@ import ExternalLink from 'components/external_link';
 import alertIcon from 'images/icons/round-white-info-icon.svg';
 import warningIcon from 'images/icons/warning-icon.svg';
 import {AnnouncementBarTypes, AnnouncementBarMessages, Preferences, ConfigurationBanners, Constants, TELEMETRY_CATEGORIES} from 'utils/constants';
-import {t} from 'utils/i18n';
 import {daysToLicenseExpire, isLicenseExpired, isLicenseExpiring, isLicensePastGracePeriod, isTrialLicense} from 'utils/license_utils';
 import {getSkuDisplayName} from 'utils/subscription';
 import {getViewportSize} from 'utils/utils';
@@ -44,9 +45,7 @@ type Props = {
     warnMetricsStatus?: Record<string, WarnMetricStatus>;
     actions: {
         dismissNotice: (notice: string) => void;
-        savePreferences: (userId: string, preferences: PreferenceType[]) => Promise<{
-            data: boolean;
-        }>;
+        savePreferences: (userId: string, preferences: PreferenceType[]) => Promise<ActionResult>;
     };
 };
 
@@ -252,16 +251,6 @@ const ConfigurationAnnouncementBar = (props: Props) => {
     }
 
     if (props.canViewSystemErrors && props.config?.SiteURL === '') {
-        let id;
-        let defaultMessage;
-        if (props.config?.EnableSignUpWithGitLab === 'true') {
-            id = t('announcement_bar.error.site_url_gitlab.full');
-            defaultMessage = 'Please configure your <linkSite>site URL</linkSite> either on the <linkConsole>System Console<linkConsole> or, if you\'re using GitLab Mattermost, in gitlab.rb.';
-        } else {
-            id = t('announcement_bar.error.site_url.full');
-            defaultMessage = 'Please configure your <linkSite>site URL</linkSite> on the <linkConsole>System Console</linkConsole>.';
-        }
-
         const values: Record<string, ReactNode> = {
             linkSite: (msg: string) => (
                 <ExternalLink
@@ -277,7 +266,19 @@ const ConfigurationAnnouncementBar = (props: Props) => {
                 </Link>
             ),
         };
-        const siteURLMessage = formatMessage({id, defaultMessage}, values);
+
+        let siteURLMessage;
+        if (props.config?.EnableSignUpWithGitLab === 'true') {
+            siteURLMessage = formatMessage({
+                id: 'announcement_bar.error.site_url_gitlab.full',
+                defaultMessage: 'Please configure your <linkSite>site URL</linkSite> either on the <linkConsole>System Console</linkConsole> or, if you\'re using GitLab Mattermost, in gitlab.rb.',
+            }, values);
+        } else {
+            siteURLMessage = formatMessage({
+                id: 'announcement_bar.error.site_url.full',
+                defaultMessage: 'Please configure your <linkSite>site URL</linkSite> on the <linkConsole>System Console</linkConsole>.',
+            }, values);
+        }
 
         return (
             <TextDismissableBar

@@ -15,18 +15,20 @@ import (
 )
 
 func (api *API) InitReports() {
-	api.BaseRoutes.Reports.Handle("/users", api.APISessionRequired(getUsersForReporting)).Methods("GET")
-	api.BaseRoutes.Reports.Handle("/users/count", api.APISessionRequired(getUserCountForReporting)).Methods("GET")
+	api.BaseRoutes.Reports.Handle("/users", api.APISessionRequired(getUsersForReporting)).Methods(http.MethodGet)
+	api.BaseRoutes.Reports.Handle("/users/count", api.APISessionRequired(getUserCountForReporting)).Methods(http.MethodGet)
+	api.BaseRoutes.Reports.Handle("/users/export", api.APISessionRequired(startUsersBatchExport)).Methods(http.MethodPost)
 }
 
 func getUsersForReporting(c *Context, w http.ResponseWriter, r *http.Request) {
-	if !(c.IsSystemAdmin() && c.App.SessionHasPermissionTo(*c.AppContext.Session(), model.PermissionSysconsoleReadUserManagementUsers)) {
+	if !c.App.SessionHasPermissionTo(*c.AppContext.Session(), model.PermissionSysconsoleReadUserManagementUsers) {
 		c.SetPermissionError(model.PermissionSysconsoleReadUserManagementUsers)
 		return
 	}
 
 	baseOptions := fillReportingBaseOptions(r.URL.Query())
 	options, err := fillUserReportOptions(r.URL.Query())
+
 	if err != nil {
 		c.Err = err
 		return
@@ -51,7 +53,7 @@ func getUsersForReporting(c *Context, w http.ResponseWriter, r *http.Request) {
 }
 
 func getUserCountForReporting(c *Context, w http.ResponseWriter, r *http.Request) {
-	if !(c.IsSystemAdmin() && c.App.SessionHasPermissionTo(*c.AppContext.Session(), model.PermissionSysconsoleReadUserManagementUsers)) {
+	if !c.App.SessionHasPermissionTo(*c.AppContext.Session(), model.PermissionSysconsoleReadUserManagementUsers) {
 		c.SetPermissionError(model.PermissionSysconsoleReadUserManagementUsers)
 		return
 	}
@@ -73,6 +75,34 @@ func getUserCountForReporting(c *Context, w http.ResponseWriter, r *http.Request
 	}
 }
 
+func startUsersBatchExport(c *Context, w http.ResponseWriter, r *http.Request) {
+	if !(c.IsSystemAdmin()) {
+		c.SetPermissionError(model.PermissionManageSystem)
+		return
+	}
+
+	baseOptions := fillReportingBaseOptions(r.URL.Query())
+	options, err := fillUserReportOptions(r.URL.Query())
+
+	if err != nil {
+		c.Err = err
+		return
+	}
+	options.ReportingBaseOptions = baseOptions
+	dateRange := options.ReportingBaseOptions.DateRange
+	if dateRange == "" {
+		dateRange = "all_time"
+	}
+
+	startAt, endAt := model.GetReportDateRange(dateRange, time.Now())
+	if err := c.App.StartUsersBatchExport(c.AppContext, options, startAt, endAt); err != nil {
+		c.Err = err
+		return
+	}
+
+	ReturnStatusOK(w)
+}
+
 func fillReportingBaseOptions(values url.Values) model.ReportingBaseOptions {
 	sortColumn := "Username"
 	if values.Get("sort_column") != "" {
@@ -89,7 +119,7 @@ func fillReportingBaseOptions(values url.Values) model.ReportingBaseOptions {
 		pageSize = int(pageSizeStr)
 	}
 
-	return model.ReportingBaseOptions{
+	options := model.ReportingBaseOptions{
 		Direction:       direction,
 		SortColumn:      sortColumn,
 		SortDesc:        values.Get("sort_direction") == "desc",
@@ -98,6 +128,8 @@ func fillReportingBaseOptions(values url.Values) model.ReportingBaseOptions {
 		FromId:          values.Get("from_id"),
 		DateRange:       values.Get("date_range"),
 	}
+	options.PopulateDateRange(time.Now())
+	return options
 }
 
 func fillUserReportOptions(values url.Values) (*model.UserReportOptions, *model.AppError) {
@@ -112,15 +144,12 @@ func fillUserReportOptions(values url.Values) (*model.UserReportOptions, *model.
 		return nil, model.NewAppError("getUsersForReporting", "api.getUsersForReporting.invalid_active_filter", nil, "", http.StatusBadRequest)
 	}
 
-	options := &model.UserReportOptions{
-
+	return &model.UserReportOptions{
 		Team:         teamFilter,
 		Role:         values.Get("role_filter"),
 		HasNoTeam:    values.Get("has_no_team") == "true",
 		HideActive:   hideActive,
 		HideInactive: hideInactive,
 		SearchTerm:   values.Get("search_term"),
-	}
-	options.PopulateDateRange(time.Now())
-	return options, nil
+	}, nil
 }

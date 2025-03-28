@@ -8,8 +8,6 @@ import {useDispatch} from 'react-redux';
 import {AlertOutlineIcon} from '@mattermost/compass-icons/components';
 import type {AllowedIPRange, FetchIPResponse} from '@mattermost/types/config';
 
-import type {DispatchFunc} from 'mattermost-redux/types/actions';
-
 import {applyIPFilters, getCurrentIP, getIPFilters} from 'actions/admin_actions';
 import {getInstallation} from 'actions/cloud';
 import {closeModal, openModal} from 'actions/views/modals';
@@ -25,12 +23,12 @@ import EnableSectionContent from './enable_section';
 import {isIPAddressInRanges} from './ip_filtering_utils';
 import SaveConfirmationModal from './save_confirmation_modal';
 
-import SaveChangesPanel from '../team_channel_settings/save_changes_panel';
+import SaveChangesPanel from '../save_changes_panel';
 
 import './ip_filtering.scss';
 
 const IPFiltering = () => {
-    const dispatch = useDispatch<DispatchFunc>();
+    const dispatch = useDispatch();
     const {formatMessage} = useIntl();
     const [ipFilters, setIpFilters] = useState<AllowedIPRange[] | null>(null);
     const [originalIpFilters, setOriginalIpFilters] = useState<AllowedIPRange[] | null>(null);

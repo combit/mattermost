@@ -18,7 +18,7 @@ func fixMention(post *model.Post, mentionMap model.UserMentionMap, user *model.U
 		return
 	}
 
-	realUsername, ok := user.GetProp(KeyRemoteUsername)
+	realUsername, ok := user.GetProp(model.UserPropsKeyRemoteUsername)
 	if !ok {
 		return
 	}
@@ -95,15 +95,6 @@ func mungUsername(username string, remotename string, suffix string, maxLen int)
 	return fmt.Sprintf("%s%s%s:%s%s", username, suffix, userEllipses, remotename, remoteEllipses)
 }
 
-// mungEmail creates a unique email address using a UID and remote name.
-func mungEmail(remotename string, maxLen int) string {
-	s := fmt.Sprintf("%s@%s", model.NewId(), remotename)
-	if len(s) > maxLen {
-		s = s[:maxLen]
-	}
-	return s
-}
-
 func isConflictError(err error) (string, bool) {
 	if err == nil {
 		return "", false
@@ -129,4 +120,22 @@ func isNotFoundError(err error) bool {
 
 	var errNotFound *store.ErrNotFound
 	return errors.As(err, &errNotFound)
+}
+
+func postsSliceToMap(posts []*model.Post) map[string]*model.Post {
+	m := make(map[string]*model.Post, len(posts))
+	for _, p := range posts {
+		m[p.Id] = p
+	}
+	return m
+}
+
+func reducePostsSliceInCache(posts []*model.Post, cache map[string]*model.Post) []*model.Post {
+	reduced := make([]*model.Post, 0, len(posts))
+	for _, p := range posts {
+		if _, ok := cache[p.Id]; !ok {
+			reduced = append(reduced, p)
+		}
+	}
+	return reduced
 }

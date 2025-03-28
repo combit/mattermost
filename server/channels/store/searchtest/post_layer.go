@@ -33,7 +33,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should be able to search for quoted patterns with AND OR combinations",
 		Fn:   testSearchANDORQuotesCombinations,
-		Tags: []string{EnginePostgres, EngineMySql, EngineElasticSearch},
+		Tags: []string{EnginePostgres, EngineMySQL, EngineElasticSearch},
 	},
 	{
 		// Postgres supports search with and without quotes
@@ -45,7 +45,7 @@ var searchPostStoreTests = []searchTest{
 		// MySql supports search with quotes only
 		Name: "Should be able to search for email addresses with quotes",
 		Fn:   testSearchEmailAddressesWithQuotes,
-		Tags: []string{EngineMySql},
+		Tags: []string{EngineMySQL},
 	},
 	{
 		Name: "Should be able to search when markdown underscores are applied",
@@ -100,12 +100,12 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should be able to exclude messages that contain a search term",
 		Fn:   testFilterMessagesWithATerm,
-		Tags: []string{EngineMySql, EnginePostgres},
+		Tags: []string{EngineMySQL, EnginePostgres},
 	},
 	{
 		Name: "Should be able to search using boolean operators",
 		Fn:   testSearchUsingBooleanOperators,
-		Tags: []string{EngineMySql, EnginePostgres, EngineElasticSearch},
+		Tags: []string{EngineMySQL, EnginePostgres, EngineElasticSearch},
 	},
 	{
 		Name: "Should be able to search with combined filters",
@@ -115,7 +115,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should be able to ignore stop words",
 		Fn:   testSearchIgnoringStopWords,
-		Tags: []string{EngineMySql, EngineElasticSearch},
+		Tags: []string{EngineMySQL, EngineElasticSearch},
 	},
 	{
 		Name: "Should support search stemming",
@@ -146,7 +146,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should support terms with underscore",
 		Fn:   testSupportTermsWithUnderscore,
-		Tags: []string{EngineMySql, EngineElasticSearch},
+		Tags: []string{EngineMySQL, EngineElasticSearch},
 	},
 	{
 		Name: "Should search or exclude post using hashtags",
@@ -211,7 +211,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should be able to search in deleted/archived channels",
 		Fn:   testSearchInDeletedOrArchivedChannels,
-		Tags: []string{EngineMySql, EnginePostgres},
+		Tags: []string{EngineMySQL, EnginePostgres},
 	},
 	{
 		Name:        "Should be able to search terms with dashes",
@@ -228,7 +228,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should be able to search terms with underscores",
 		Fn:   testSearchTermsWithUnderscores,
-		Tags: []string{EngineMySql, EngineElasticSearch},
+		Tags: []string{EngineMySQL, EngineElasticSearch},
 	},
 	{
 		Name: "Should be able to search posts made by bot accounts",
@@ -253,7 +253,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should not support slash as character separator",
 		Fn:   testSlashShouldNotBeCharSeparator,
-		Tags: []string{EngineMySql, EngineElasticSearch},
+		Tags: []string{EngineMySQL, EngineElasticSearch},
 	},
 	{
 		Name: "Should be able to search in comments",
@@ -263,7 +263,7 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should be able to search terms within links",
 		Fn:   testSupportSearchTermsWithinLinks,
-		Tags: []string{EngineMySql, EngineElasticSearch},
+		Tags: []string{EngineMySQL, EngineElasticSearch},
 	},
 	{
 		Name: "Should not return links that are embedded in markdown",
@@ -273,6 +273,11 @@ var searchPostStoreTests = []searchTest{
 	{
 		Name: "Should search across teams",
 		Fn:   testSearchAcrossTeams,
+		Tags: []string{EngineAll},
+	},
+	{
+		Name: "Should be removed from search index when deleted",
+		Fn:   testSearchPostDeleted,
 		Tags: []string{EngineAll},
 	},
 }
@@ -1954,4 +1959,32 @@ func testSearchAcrossTeams(t *testing.T, th *SearchTestHelper) {
 	require.NoError(t, err)
 
 	require.Len(t, results.Posts, 2)
+}
+
+func testSearchPostDeleted(t *testing.T, th *SearchTestHelper) {
+	t.Run("Search for soft deleted post", func(t *testing.T) {
+		p1, err := th.createPost(th.User.Id, th.ChannelBasic.Id, "message to delete", "", model.PostTypeDefault, 0, false)
+		require.NoError(t, err)
+
+		err = th.Store.Post().Delete(th.Context, p1.Id, p1.UpdateAt, th.User.Id)
+		require.NoError(t, err)
+
+		params := &model.SearchParams{Terms: "message to delete"}
+		results, err := th.Store.Post().SearchPostsForUser(th.Context, []*model.SearchParams{params}, th.User.Id, th.Team.Id, 0, 20)
+		require.NoError(t, err)
+		require.Len(t, results.Posts, 0)
+	})
+
+	t.Run("Search for hard deleted post", func(t *testing.T) {
+		p2, err := th.createPost(th.User.Id, th.ChannelBasic.Id, "message to delete", "", model.PostTypeDefault, 0, false)
+		require.NoError(t, err)
+
+		err = th.Store.Post().PermanentDelete(th.Context, p2.Id)
+		require.NoError(t, err)
+
+		params := &model.SearchParams{Terms: "message to delete"}
+		results, err := th.Store.Post().SearchPostsForUser(th.Context, []*model.SearchParams{params}, th.User.Id, th.Team.Id, 0, 20)
+		require.NoError(t, err)
+		require.Len(t, results.Posts, 0)
+	})
 }

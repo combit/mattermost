@@ -3,16 +3,16 @@
 
 import {combineReducers} from 'redux';
 
+import type {MMReduxAction} from 'mattermost-redux/action_types';
 import {LimitsTypes} from 'mattermost-redux/action_types';
-import type {GenericAction} from 'mattermost-redux/types/actions';
 
-function usersLimits(state = {}, action: GenericAction) {
+function serverLimits(state = {}, action: MMReduxAction) {
     switch (action.type) {
-    case LimitsTypes.RECIEVED_USERS_LIMITS: {
-        const usersLimits = action.data;
+    case LimitsTypes.RECIEVED_APP_LIMITS: {
+        const serverLimits = action.data;
         return {
             ...state,
-            ...usersLimits,
+            ...serverLimits,
         };
     }
     default:
@@ -21,5 +21,5 @@ function usersLimits(state = {}, action: GenericAction) {
 }
 
 export default combineReducers({
-    usersLimits,
+    serverLimits,
 });

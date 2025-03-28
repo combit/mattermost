@@ -4,7 +4,7 @@ exports[`components/AdminSidebar Plugins should filter plugins 1`] = `
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -43,8 +43,8 @@ exports[`components/AdminSidebar Plugins should filter plugins 1`] = `
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter="autolink"
+      <SearchKeywordMarking
+        keyword="autolink"
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -74,7 +74,7 @@ exports[`components/AdminSidebar Plugins should filter plugins 1`] = `
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -84,7 +84,7 @@ exports[`components/AdminSidebar Plugins should match snapshot 1`] = `
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -123,8 +123,8 @@ exports[`components/AdminSidebar Plugins should match snapshot 1`] = `
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -190,7 +190,7 @@ exports[`components/AdminSidebar Plugins should match snapshot 1`] = `
               }
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="System Roles"
+                  defaultMessage="Delegated Granular Administration"
                   id="admin.sidebar.systemRoles"
                 />
               }
@@ -233,7 +233,7 @@ exports[`components/AdminSidebar Plugins should match snapshot 1`] = `
               }
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Announcement Banner"
+                  defaultMessage="System-wide Notifications"
                   id="admin.sidebar.announcement"
                 />
               }
@@ -481,7 +481,7 @@ exports[`components/AdminSidebar Plugins should match snapshot 1`] = `
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -491,7 +491,7 @@ exports[`components/AdminSidebar should match snapshot 1`] = `
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -530,8 +530,8 @@ exports[`components/AdminSidebar should match snapshot 1`] = `
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -1105,7 +1105,7 @@ exports[`components/AdminSidebar should match snapshot 1`] = `
               name="integrations/gif"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="GIF (Beta)"
+                  defaultMessage="GIF"
                   id="admin.sidebar.gif"
                 />
               }
@@ -1118,6 +1118,17 @@ exports[`components/AdminSidebar should match snapshot 1`] = `
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="CORS"
                   id="admin.sidebar.cors"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="integrations.embedding"
+              key="integrations.embedding"
+              name="integrations/embedding"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Embedding"
+                  id="admin.sidebar.embedding"
                 />
               }
             />
@@ -1157,7 +1168,7 @@ exports[`components/AdminSidebar should match snapshot 1`] = `
               name="experimental/feature_flags"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Feature Flags"
+                  defaultMessage="Features Flags"
                   id="admin.feature_flags.title"
                 />
               }
@@ -1175,7 +1186,7 @@ exports[`components/AdminSidebar should match snapshot 1`] = `
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -1185,7 +1196,7 @@ exports[`components/AdminSidebar should match snapshot with workspace optimizati
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -1224,8 +1235,8 @@ exports[`components/AdminSidebar should match snapshot with workspace optimizati
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -1799,7 +1810,7 @@ exports[`components/AdminSidebar should match snapshot with workspace optimizati
               name="integrations/gif"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="GIF (Beta)"
+                  defaultMessage="GIF"
                   id="admin.sidebar.gif"
                 />
               }
@@ -1812,6 +1823,17 @@ exports[`components/AdminSidebar should match snapshot with workspace optimizati
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="CORS"
                   id="admin.sidebar.cors"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="integrations.embedding"
+              key="integrations.embedding"
+              name="integrations/embedding"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Embedding"
+                  id="admin.sidebar.embedding"
                 />
               }
             />
@@ -1851,7 +1873,7 @@ exports[`components/AdminSidebar should match snapshot with workspace optimizati
               name="experimental/feature_flags"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Feature Flags"
+                  defaultMessage="Features Flags"
                   id="admin.feature_flags.title"
                 />
               }
@@ -1869,7 +1891,7 @@ exports[`components/AdminSidebar should match snapshot with workspace optimizati
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -1879,7 +1901,7 @@ exports[`components/AdminSidebar should match snapshot, no access 1`] = `
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -1918,13 +1940,13 @@ exports[`components/AdminSidebar should match snapshot, no access 1`] = `
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
         />
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -1934,7 +1956,7 @@ exports[`components/AdminSidebar should match snapshot, not prevent the console 
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -1973,8 +1995,8 @@ exports[`components/AdminSidebar should match snapshot, not prevent the console 
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -2548,7 +2570,7 @@ exports[`components/AdminSidebar should match snapshot, not prevent the console 
               name="integrations/gif"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="GIF (Beta)"
+                  defaultMessage="GIF"
                   id="admin.sidebar.gif"
                 />
               }
@@ -2561,6 +2583,17 @@ exports[`components/AdminSidebar should match snapshot, not prevent the console 
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="CORS"
                   id="admin.sidebar.cors"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="integrations.embedding"
+              key="integrations.embedding"
+              name="integrations/embedding"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Embedding"
+                  id="admin.sidebar.embedding"
                 />
               }
             />
@@ -2600,7 +2633,7 @@ exports[`components/AdminSidebar should match snapshot, not prevent the console 
               name="experimental/feature_flags"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Feature Flags"
+                  defaultMessage="Features Flags"
                   id="admin.feature_flags.title"
                 />
               }
@@ -2618,7 +2651,7 @@ exports[`components/AdminSidebar should match snapshot, not prevent the console 
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -2628,7 +2661,7 @@ exports[`components/AdminSidebar should match snapshot, render plugins without a
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -2667,8 +2700,8 @@ exports[`components/AdminSidebar should match snapshot, render plugins without a
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -3242,7 +3275,7 @@ exports[`components/AdminSidebar should match snapshot, render plugins without a
               name="integrations/gif"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="GIF (Beta)"
+                  defaultMessage="GIF"
                   id="admin.sidebar.gif"
                 />
               }
@@ -3255,6 +3288,17 @@ exports[`components/AdminSidebar should match snapshot, render plugins without a
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="CORS"
                   id="admin.sidebar.cors"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="integrations.embedding"
+              key="integrations.embedding"
+              name="integrations/embedding"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Embedding"
+                  id="admin.sidebar.embedding"
                 />
               }
             />
@@ -3294,7 +3338,7 @@ exports[`components/AdminSidebar should match snapshot, render plugins without a
               name="experimental/feature_flags"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Feature Flags"
+                  defaultMessage="Features Flags"
                   id="admin.feature_flags.title"
                 />
               }
@@ -3312,7 +3356,7 @@ exports[`components/AdminSidebar should match snapshot, render plugins without a
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -3322,7 +3366,7 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -3361,8 +3405,8 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -3539,7 +3583,7 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
               name="user_management/system_roles"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="System Roles"
+                  defaultMessage="Delegated Granular Administration"
                   id="admin.sidebar.systemRoles"
                 />
               }
@@ -3648,6 +3692,17 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="High Availability"
                   id="admin.sidebar.highAvailability"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="environment.cache_settings"
+              key="environment.cache_settings"
+              name="environment/cache_settings"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Cache Settings"
+                  id="admin.cacheSettings.title"
                 />
               }
             />
@@ -3775,7 +3830,7 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
               name="site_config/announcement_banner"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Announcement Banner"
+                  defaultMessage="System-wide Notifications"
                   id="admin.sidebar.announcement"
                 />
               }
@@ -4035,7 +4090,7 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
               name="integrations/gif"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="GIF (Beta)"
+                  defaultMessage="GIF"
                   id="admin.sidebar.gif"
                 />
               }
@@ -4048,6 +4103,17 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="CORS"
                   id="admin.sidebar.cors"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="integrations.embedding"
+              key="integrations.embedding"
+              name="integrations/embedding"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Embedding"
+                  id="admin.sidebar.embedding"
                 />
               }
             />
@@ -4150,7 +4216,7 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
               name="experimental/feature_flags"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Feature Flags"
+                  defaultMessage="Features Flags"
                   id="admin.feature_flags.title"
                 />
               }
@@ -4168,7 +4234,7 @@ exports[`components/AdminSidebar should match snapshot, with license (with all f
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>
@@ -4178,7 +4244,7 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
 <div
   className="admin-sidebar"
 >
-  <Connect(SidebarHeader) />
+  <Connect(Component) />
   <div
     className="filter-container"
   >
@@ -4217,8 +4283,8 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
     <div
       className="nav-pills__container"
     >
-      <Highlight
-        filter=""
+      <SearchKeywordMarking
+        keyword=""
       >
         <ul
           className="nav nav-pills nav-stacked"
@@ -4421,7 +4487,7 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
               }
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="System Roles"
+                  defaultMessage="Delegated Granular Administration"
                   id="admin.sidebar.systemRoles"
                 />
               }
@@ -4648,7 +4714,7 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
               }
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Announcement Banner"
+                  defaultMessage="System-wide Notifications"
                   id="admin.sidebar.announcement"
                 />
               }
@@ -4960,7 +5026,7 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
               name="integrations/gif"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="GIF (Beta)"
+                  defaultMessage="GIF"
                   id="admin.sidebar.gif"
                 />
               }
@@ -4973,6 +5039,17 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
                 <Memo(MemoizedFormattedMessage)
                   defaultMessage="CORS"
                   id="admin.sidebar.cors"
+                />
+              }
+            />
+            <AdminSidebarSection
+              definitionKey="integrations.embedding"
+              key="integrations.embedding"
+              name="integrations/embedding"
+              title={
+                <Memo(MemoizedFormattedMessage)
+                  defaultMessage="Embedding"
+                  id="admin.sidebar.embedding"
                 />
               }
             />
@@ -5103,7 +5180,7 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
               name="experimental/feature_flags"
               title={
                 <Memo(MemoizedFormattedMessage)
-                  defaultMessage="Feature Flags"
+                  defaultMessage="Features Flags"
                   id="admin.feature_flags.title"
                 />
               }
@@ -5121,7 +5198,7 @@ exports[`components/AdminSidebar should match snapshot, with license (without an
             />
           </AdminSidebarCategory>
         </ul>
-      </Highlight>
+      </SearchKeywordMarking>
     </div>
   </Scrollbars>
 </div>

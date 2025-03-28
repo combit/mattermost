@@ -13,7 +13,7 @@ type Props = {
     label: React.ReactNode;
     helpText?: React.ReactNode;
     uploadingText?: React.ReactNode;
-    onSubmit: (id: string, file: File, errorCallback: (error: string) => void) => void;
+    onSubmit: (id: string, file: File, errorCallback: (error?: string) => void) => void;
     disabled: boolean;
     fileType: string;
     error?: string;
@@ -39,6 +39,10 @@ export default class FileUploadSetting extends React.PureComponent<Props, State>
             fileSelected: false,
         };
     }
+
+    handleChooseClick = () => {
+        this.fileInputRef.current?.click();
+    };
 
     handleChange = () => {
         const files = this.fileInputRef.current?.files;
@@ -92,6 +96,7 @@ export default class FileUploadSetting extends React.PureComponent<Props, State>
                             type='button'
                             className='btn btn-tertiary'
                             disabled={this.props.disabled}
+                            onClick={this.handleChooseClick}
                         >
                             <FormattedMessage
                                 id='admin.file_upload.chooseFile'

@@ -11,7 +11,7 @@ Object {
       aria-hidden="true"
     />
     <div
-      role="dialog"
+      role="none"
     >
       <div
         class="fade modal-backdrop in"
@@ -252,7 +252,7 @@ Object {
                               <div
                                 class="DropDown__placeholder css-1wa3eu0-placeholder"
                               >
-                                Country
+                                Country/Region
                               </div>
                               <div
                                 class="css-1ed09z3-Input"

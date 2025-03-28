@@ -135,6 +135,12 @@ type API interface {
 	// Minimum server version: 5.10
 	GetUsers(options *model.UserGetOptions) ([]*model.User, *model.AppError)
 
+	// GetUsersByIds gets a list of users by their IDs.
+	//
+	// @tag User
+	// Minimum server version: 9.8
+	GetUsersByIds(userIDs []string) ([]*model.User, *model.AppError)
+
 	// GetUser gets a user.
 	//
 	// @tag User
@@ -166,7 +172,8 @@ type API interface {
 	// Minimum server version: 5.6
 	GetUsersInTeam(teamID string, page int, perPage int) ([]*model.User, *model.AppError)
 
-	// GetPreferenceForUser gets a single preference for a user.
+	// GetPreferenceForUser gets a single preference for a user. An error is returned if the user has no preference
+	// set with the given category and name, an error is returned.
 	//
 	// @tag User
 	// @tag Preference
@@ -463,7 +470,8 @@ type API interface {
 	// Minimum server version: 5.2
 	GetChannelByNameForTeamName(teamName, channelName string, includeDeleted bool) (*model.Channel, *model.AppError)
 
-	// GetChannelsForTeamForUser gets a list of channels for given user ID in given team ID.
+	// GetChannelsForTeamForUser  gets a list of channels for given user ID in given team ID, including DMs.
+	// If an empty string is passed as the team ID, the user's channels on all teams and their DMs will be returned.
 	//
 	// @tag Channel
 	// @tag Team
@@ -1279,10 +1287,11 @@ type API interface {
 
 	// InviteRemoteToChannel invites a remote, or this plugin, as a target for synchronizing. Once invited, the
 	// remote will start to receive synchronization messages for any changed content in the specified channel.
+	// If `shareIfNotShared` is true, the channel's shared flag will be set, if not already.
 	//
 	// @tag SharedChannels
 	// Minimum server version: 9.5
-	InviteRemoteToChannel(channelID string, remoteID string, userID string) error
+	InviteRemoteToChannel(channelID string, remoteID string, userID string, shareIfNotShared bool) error
 
 	// UninviteRemoteFromChannel uninvites a remote, or this plugin, such that it will stop receiving sychronization
 	// messages for the channel.
@@ -1290,6 +1299,19 @@ type API interface {
 	// @tag SharedChannels
 	// Minimum server version: 9.5
 	UninviteRemoteFromChannel(channelID string, remoteID string) error
+
+	// UpdateUserRoles updates the role for a user.
+	//
+	// @tag Team
+	// @tag User
+	// Minimum server version: 9.8
+	UpdateUserRoles(userID, newRoles string) (*model.User, *model.AppError)
+
+	// GetPluginID returns the plugin ID.
+	//
+	// @tag Plugin
+	// Minimum server version: 10.1
+	GetPluginID() string
 }
 
 var handshake = plugin.HandshakeConfig{

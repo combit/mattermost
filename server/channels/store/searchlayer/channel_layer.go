@@ -66,11 +66,8 @@ func (c *SearchChannelStore) indexChannel(rctx request.CTX, channel *model.Chann
 	}
 }
 
-func (c *SearchChannelStore) Save(channel *model.Channel, maxChannels int64) (*model.Channel, error) {
-	// TODO: Use the actuall request context from the App layer
-	// https://mattermost.atlassian.net/browse/MM-55733
-	rctx := request.EmptyContext(c.rootStore.Logger())
-	newChannel, err := c.ChannelStore.Save(channel, maxChannels)
+func (c *SearchChannelStore) Save(rctx request.CTX, channel *model.Channel, maxChannels int64) (*model.Channel, error) {
+	newChannel, err := c.ChannelStore.Save(rctx, channel, maxChannels)
 	if err == nil {
 		c.indexChannel(rctx, newChannel)
 	}
@@ -100,11 +97,8 @@ func (c *SearchChannelStore) UpdateMember(rctx request.CTX, cm *model.ChannelMem
 	return member, err
 }
 
-func (c *SearchChannelStore) SaveMember(cm *model.ChannelMember) (*model.ChannelMember, error) {
-	// TODO: Use the actuall request context from the App layer
-	// https://mattermost.atlassian.net/browse/MM-55734
-	rctx := request.EmptyContext(c.rootStore.Logger())
-	member, err := c.ChannelStore.SaveMember(cm)
+func (c *SearchChannelStore) SaveMember(rctx request.CTX, cm *model.ChannelMember) (*model.ChannelMember, error) {
+	member, err := c.ChannelStore.SaveMember(rctx, cm)
 	if err == nil {
 		c.rootStore.indexUserFromID(rctx, cm.UserId)
 		channel, channelErr := c.ChannelStore.Get(member.ChannelId, true)
@@ -235,7 +229,7 @@ func (c *SearchChannelStore) AutocompleteInTeam(rctx request.CTX, teamID, userID
 }
 
 func (c *SearchChannelStore) searchAutocompleteChannels(engine searchengine.SearchEngineInterface, teamId, userID, term string, includeDeleted, isGuest bool) (model.ChannelList, error) {
-	channelIds, err := engine.SearchChannels(teamId, userID, term, isGuest)
+	channelIds, err := engine.SearchChannels(teamId, userID, term, isGuest, includeDeleted)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +247,7 @@ func (c *SearchChannelStore) searchAutocompleteChannels(engine searchengine.Sear
 }
 
 func (c *SearchChannelStore) searchAutocompleteChannelsAllTeams(engine searchengine.SearchEngineInterface, userID, term string, includeDeleted, isGuest bool) (model.ChannelListWithTeamData, error) {
-	channelIds, err := engine.SearchChannels("", userID, term, isGuest)
+	channelIds, err := engine.SearchChannels("", userID, term, isGuest, includeDeleted)
 	if err != nil {
 		return nil, err
 	}

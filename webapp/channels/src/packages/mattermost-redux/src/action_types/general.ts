@@ -12,7 +12,7 @@ export default keyMirror({
     CLIENT_LICENSE_RECEIVED: null,
     CLIENT_LICENSE_RESET: null,
 
-    RECEIVED_DATA_RETENTION_POLICY: null,
+    CUSTOM_PROFILE_ATTRIBUTES_RECEIVED: null,
 
     LOG_CLIENT_ERROR_REQUEST: null,
     LOG_CLIENT_ERROR_SUCCESS: null,
@@ -23,6 +23,7 @@ export default keyMirror({
     WEBSOCKET_FAILURE: null,
     WEBSOCKET_CLOSED: null,
     SET_CONNECTION_ID: null,
+    SET_SERVER_HOSTNAME: null,
 
     SET_CONFIG_AND_LICENSE: null,
 

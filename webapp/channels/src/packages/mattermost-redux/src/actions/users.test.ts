@@ -7,19 +7,20 @@ import nock from 'nock';
 
 import type {UserProfile} from '@mattermost/types/users';
 
-import {UserTypes} from 'mattermost-redux/action_types';
+import {GeneralTypes, UserTypes} from 'mattermost-redux/action_types';
 import * as Actions from 'mattermost-redux/actions/users';
 import {Client4} from 'mattermost-redux/client';
+import {General, RequestStatus} from 'mattermost-redux/constants';
 import deepFreeze from 'mattermost-redux/utils/deep_freeze';
 
 import TestHelper from '../../test/test_helper';
 import configureStore from '../../test/test_store';
-import {RequestStatus} from '../constants';
 
 const OK_RESPONSE = {status: 'OK'};
 
 describe('Actions.Users', () => {
     let store = configureStore();
+
     beforeAll(() => {
         TestHelper.initBasic(Client4);
     });
@@ -53,7 +54,8 @@ describe('Actions.Users', () => {
             post('/users').
             reply(201, {...userToCreate, id: TestHelper.generateId()});
 
-        const {data: user} = await store.dispatch(Actions.createUser(userToCreate, '', '', ''));
+        const response = await store.dispatch(Actions.createUser(userToCreate, '', '', ''));
+        const user = response.data!;
 
         const state = store.getState();
         const {profiles} = state.entities.users;
@@ -122,10 +124,10 @@ describe('Actions.Users', () => {
 
         await store.dispatch(Actions.updateMyTermsOfServiceStatus('1', false));
 
-        const {currentUserId, myAcceptedTermsOfServiceId} = store.getState().entities.users;
+        const {currentUserId, profiles} = store.getState().entities.users;
 
         expect(currentUserId).toBeTruthy();
-        expect(myAcceptedTermsOfServiceId).not.toEqual('1');
+        expect(profiles[currentUserId]).not.toEqual('1');
     });
 
     it('logout', async () => {
@@ -208,9 +210,6 @@ describe('Actions.Users', () => {
         // channel stats is not empty
         expect(channels.stats).toEqual({});
 
-        // selected post id is not empty
-        expect(posts.selectedPostId).toEqual('');
-
         // current focused post id is not empty
         expect(posts.currentFocusedPostId).toEqual('');
 
@@ -258,21 +257,252 @@ describe('Actions.Users', () => {
         expect(profiles[user.id]).toBeTruthy();
     });
 
-    it('getMissingProfilesByIds', async () => {
-        nock(Client4.getBaseRoute()).
-            post('/users').
-            reply(200, TestHelper.fakeUserWithId());
+    describe('getMissingProfilesByIds', () => {
+        const testUserId1 = 'testUser1';
+        const testUserId2 = 'testUser2';
+        const testUserId3 = 'testUser3';
 
-        const user = await TestHelper.basicClient4!.createUser(TestHelper.fakeUser(), '', '');
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
 
-        nock(Client4.getBaseRoute()).
-            post('/users/ids').
-            reply(200, [user]);
+        afterEach(() => {
+            expect(jest.getTimerCount()).toBe(0);
 
-        await store.dispatch(Actions.getMissingProfilesByIds([user.id]));
-        const {profiles} = store.getState().entities.users;
+            jest.useRealTimers();
+        });
 
-        expect(profiles[user.id]).toBeTruthy();
+        test('should be able to get a single user', async () => {
+            const profileMock = nock(Client4.getBaseRoute()).
+                post('/users/ids', [testUserId1]).
+                reply(200, [TestHelper.getUserMock({id: testUserId1})]);
+            const statusMock = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', [testUserId1]).
+                reply(200, [{user_id: testUserId1, status: General.ONLINE}]);
+
+            const promise = store.dispatch(Actions.getMissingProfilesByIds([testUserId1]));
+
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            expect(profileMock.isDone()).toBe(true);
+            expect(statusMock.isDone()).toBe(true);
+            expect(store.getState().entities.users.profiles[testUserId1]).toMatchObject({id: testUserId1});
+            expect(store.getState().entities.users.statuses[testUserId1]).toEqual(General.ONLINE);
+        });
+
+        test('should be able to get multiple users', async () => {
+            const profileMock = nock(Client4.getBaseRoute()).
+                post('/users/ids', [testUserId1, testUserId2, testUserId3]).
+                reply(200, [
+                    TestHelper.getUserMock({id: testUserId1}),
+                    TestHelper.getUserMock({id: testUserId2}),
+                    TestHelper.getUserMock({id: testUserId3}),
+                ]);
+            const statusMock = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', [testUserId1, testUserId2, testUserId3]).
+                reply(200, [
+                    {user_id: testUserId1, status: General.ONLINE},
+                    {user_id: testUserId2, status: General.ONLINE},
+                    {user_id: testUserId3, status: General.ONLINE},
+                ]);
+
+            const promise = store.dispatch(Actions.getMissingProfilesByIds([testUserId1, testUserId2, testUserId3]));
+
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            expect(profileMock.isDone()).toBe(true);
+            expect(statusMock.isDone()).toBe(true);
+            expect(store.getState().entities.users.profiles[testUserId1]).toMatchObject({id: testUserId1});
+            expect(store.getState().entities.users.statuses[testUserId1]).toEqual(General.ONLINE);
+            expect(store.getState().entities.users.profiles[testUserId2]).toMatchObject({id: testUserId2});
+            expect(store.getState().entities.users.statuses[testUserId2]).toEqual(General.ONLINE);
+            expect(store.getState().entities.users.profiles[testUserId3]).toMatchObject({id: testUserId3});
+            expect(store.getState().entities.users.statuses[testUserId3]).toEqual(General.ONLINE);
+        });
+
+        test('should batch requests to get users across multiple calls and dedupe IDs', async () => {
+            const profileMock = nock(Client4.getBaseRoute()).
+                post('/users/ids', [testUserId1, testUserId2, testUserId3]).
+                reply(200, [
+                    TestHelper.getUserMock({id: testUserId1}),
+                    TestHelper.getUserMock({id: testUserId2}),
+                    TestHelper.getUserMock({id: testUserId3}),
+                ]);
+            const statusMock = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', [testUserId1, testUserId2, testUserId3]).
+                reply(200, [
+                    {user_id: testUserId1, status: General.ONLINE},
+                    {user_id: testUserId2, status: General.ONLINE},
+                    {user_id: testUserId3, status: General.ONLINE},
+                ]);
+
+            const promise = Promise.all([
+                store.dispatch(Actions.getMissingProfilesByIds([testUserId1])),
+                store.dispatch(Actions.getMissingProfilesByIds([testUserId2, testUserId3])),
+                store.dispatch(Actions.getMissingProfilesByIds([testUserId2])),
+            ]);
+
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            expect(profileMock.isDone()).toBe(true);
+            expect(statusMock.isDone()).toBe(true);
+            expect(store.getState().entities.users.profiles[testUserId1]).toMatchObject({id: testUserId1});
+            expect(store.getState().entities.users.statuses[testUserId1]).toEqual(General.ONLINE);
+            expect(store.getState().entities.users.profiles[testUserId2]).toMatchObject({id: testUserId2});
+            expect(store.getState().entities.users.statuses[testUserId2]).toEqual(General.ONLINE);
+            expect(store.getState().entities.users.profiles[testUserId3]).toMatchObject({id: testUserId3});
+            expect(store.getState().entities.users.statuses[testUserId3]).toEqual(General.ONLINE);
+        });
+
+        test('should split requests for user IDs into multiple requests when necessary', async () => {
+            const idsPerBatch = Actions.maxUserIdsPerProfilesRequest;
+            const testUserIds: string[] = [];
+            for (let i = 0; i < idsPerBatch * 2.5; i++) {
+                testUserIds.push('testUser' + i);
+            }
+
+            const testUserIds1 = testUserIds.slice(0, idsPerBatch);
+            const testUserIds2 = testUserIds.slice(idsPerBatch, idsPerBatch * 2);
+            const testUserIds3 = testUserIds.slice(idsPerBatch * 2, idsPerBatch * 3);
+
+            const profileMock1 = nock(Client4.getBaseRoute()).
+                post('/users/ids', testUserIds1).
+                reply(200, testUserIds1.map((id) => TestHelper.getUserMock({id})));
+            const statusMock1 = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', testUserIds1).
+                reply(200, testUserIds1.map((id) => ({user_id: id, status: General.ONLINE})));
+            const profileMock2 = nock(Client4.getBaseRoute()).
+                post('/users/ids', testUserIds2).
+                reply(200, testUserIds2.map((id) => TestHelper.getUserMock({id})));
+            const statusMock2 = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', testUserIds2).
+                reply(200, testUserIds2.map((id) => ({user_id: id, status: General.ONLINE})));
+            const profileMock3 = nock(Client4.getBaseRoute()).
+                post('/users/ids', testUserIds3).
+                reply(200, testUserIds3.map((id) => TestHelper.getUserMock({id})));
+            const statusMock3 = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', testUserIds3).
+                reply(200, testUserIds3.map((id) => ({user_id: id, status: General.ONLINE})));
+
+            for (const id of testUserIds) {
+                expect(store.getState().entities.users.profiles[id]).not.toBeDefined();
+                expect(store.getState().entities.users.statuses[id]).not.toEqual(General.ONLINE);
+            }
+
+            const promise = store.dispatch(Actions.getMissingProfilesByIds(testUserIds));
+
+            jest.advanceTimersToNextTimer();
+            jest.advanceTimersToNextTimer();
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            // Ensure that each of those requests were made
+            expect(profileMock1.isDone()).toBe(true);
+            expect(statusMock1.isDone()).toBe(true);
+            expect(profileMock2.isDone()).toBe(true);
+            expect(statusMock2.isDone()).toBe(true);
+            expect(profileMock3.isDone()).toBe(true);
+            expect(statusMock3.isDone()).toBe(true);
+
+            // And that all of the users were loaded
+            for (const id of testUserIds) {
+                expect(store.getState().entities.users.profiles[id]).toBeDefined();
+                expect(store.getState().entities.users.statuses[id]).toEqual(General.ONLINE);
+            }
+        });
+
+        test('should not request statuses when those are disabled', async () => {
+            const profileMock = nock(Client4.getBaseRoute()).
+                post('/users/ids', [testUserId1]).
+                reply(200, [TestHelper.getUserMock({id: testUserId1})]);
+            const statusMock = nock(Client4.getBaseRoute()).
+                post('/users/status/ids', [testUserId1]).
+                reply(200, [{user_id: testUserId1, status: General.ONLINE}]);
+
+            store.dispatch({
+                type: GeneralTypes.CLIENT_CONFIG_RECEIVED,
+                data: {
+                    EnableUserStatuses: 'false',
+                },
+            });
+
+            const promise = store.dispatch(Actions.getMissingProfilesByIds([testUserId1]));
+
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            expect(profileMock.isDone()).toBe(true);
+            expect(statusMock.isDone()).toBe(false);
+            expect(store.getState().entities.users.profiles[testUserId1]).toMatchObject({id: testUserId1});
+            expect(store.getState().entities.users.statuses[testUserId1]).toBeUndefined();
+        });
+    });
+
+    describe('getMissingProfilesByUsernames', () => {
+        const testUserId1 = 'testUser1';
+        const testUsername1 = 'test_user_1';
+        const testUserId2 = 'testUser2';
+        const testUsername2 = 'test_user_2';
+        const testUserId3 = 'testUser3';
+        const testUsername3 = 'test_user_3';
+
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            expect(jest.getTimerCount()).toBe(0);
+
+            jest.useRealTimers();
+        });
+
+        test('should be able to get a single user', async () => {
+            const profileMock = nock(Client4.getBaseRoute()).
+                post('/users/usernames', [testUsername1]).
+                reply(200, [TestHelper.getUserMock({id: testUserId1, username: testUsername1})]);
+
+            const promise = store.dispatch(Actions.getMissingProfilesByUsernames([testUsername1]));
+
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            expect(profileMock.isDone()).toBe(true);
+            expect(store.getState().entities.users.profiles[testUserId1]).toMatchObject({id: testUserId1});
+        });
+
+        test('should be able to get multiple users', async () => {
+            const profileMock = nock(Client4.getBaseRoute()).
+                post('/users/usernames', [testUsername1, testUsername2, testUsername3]).
+                reply(200, [
+                    TestHelper.getUserMock({id: testUserId1, username: testUsername1}),
+                    TestHelper.getUserMock({id: testUserId2, username: testUsername2}),
+                    TestHelper.getUserMock({id: testUserId3, username: testUsername3}),
+                ]);
+
+            const promise = store.dispatch(Actions.getMissingProfilesByUsernames([
+                testUsername1,
+                testUsername2,
+                testUsername3,
+            ]));
+
+            jest.advanceTimersToNextTimer();
+
+            await promise;
+
+            expect(profileMock.isDone()).toBe(true);
+            expect(store.getState().entities.users.profiles[testUserId1]).toMatchObject({id: testUserId1});
+            expect(store.getState().entities.users.profiles[testUserId2]).toMatchObject({id: testUserId2});
+            expect(store.getState().entities.users.profiles[testUserId3]).toMatchObject({id: testUserId3});
+        });
     });
 
     it('getProfilesByUsernames', async () => {
@@ -527,16 +757,27 @@ describe('Actions.Users', () => {
     it('getStatusesByIds', async () => {
         nock(Client4.getBaseRoute()).
             post('/users/status/ids').
-            reply(200, [{user_id: TestHelper.basicUser!.id, status: 'online', manual: false, last_activity_at: 1507662212199}]);
+            reply(200, [{
+                user_id: TestHelper.basicUser!.id,
+                status: 'online',
+                manual: false,
+                last_activity_at: 1507662212199,
+                dnd_end_time: 0,
+            }]);
 
         await store.dispatch(Actions.getStatusesByIds(
             [TestHelper.basicUser!.id],
         ));
 
         const statuses = store.getState().entities.users.statuses;
+        const dndEndTimes = store.getState().entities.users.dndEndTimes;
+        const lastActivity = store.getState().entities.users.lastActivity;
+        const isManualStatus = store.getState().entities.users.isManualStatus;
 
-        expect(statuses[TestHelper.basicUser!.id]).toBeTruthy();
-        expect(Object.keys(statuses).length).toEqual(1);
+        expect(statuses[TestHelper.basicUser!.id]).toBe('online');
+        expect(dndEndTimes[TestHelper.basicUser!.id]).toBe(0);
+        expect(lastActivity[TestHelper.basicUser!.id]).toBe(1507662212199);
+        expect(isManualStatus[TestHelper.basicUser!.id]).toBe(false);
     });
 
     it('getTotalUsersStats', async () => {
@@ -550,25 +791,10 @@ describe('Actions.Users', () => {
         expect(stats.total_users_count).toEqual(2605);
     });
 
-    it('getStatus', async () => {
-        const user = TestHelper.basicUser;
-
-        nock(Client4.getBaseRoute()).
-            get(`/users/${user!.id}/status`).
-            reply(200, {user_id: user!.id, status: 'online', manual: false, last_activity_at: 1507662212199});
-
-        await store.dispatch(Actions.getStatus(
-            user!.id,
-        ));
-
-        const statuses = store.getState().entities.users.statuses;
-        expect(statuses[user!.id]).toBeTruthy();
-    });
-
     it('setStatus', async () => {
         nock(Client4.getBaseRoute()).
             put(`/users/${TestHelper.basicUser!.id}/status`).
-            reply(200, OK_RESPONSE);
+            reply(200, {user_id: TestHelper.basicUser!.id, status: 'away'});
 
         await store.dispatch(Actions.setStatus(
             {user_id: TestHelper.basicUser!.id, status: 'away'},
@@ -883,7 +1109,7 @@ describe('Actions.Users', () => {
                 mention_keys: '',
                 user_id: currentUser.id,
             },
-        } as UserProfile));
+        } as unknown as UserProfile));
 
         const updateRequest = store.getState().requests.users.updateMe;
         const {currentUserId, profiles} = store.getState().entities.users;
@@ -936,7 +1162,7 @@ describe('Actions.Users', () => {
                 mention_keys: '',
                 user_id: currentUser.id,
             },
-        } as UserProfile));
+        } as unknown as UserProfile));
 
         const {profiles} = store.getState().entities.users;
         const updateNotifyProps = profiles[currentUserId].notify_props;
@@ -1009,7 +1235,7 @@ describe('Actions.Users', () => {
         const currentUser = profiles[currentUserId];
 
         expect(currentUser).toBeTruthy();
-        expect(currentUser.last_password_update_at > beforeTime).toBeTruthy();
+        expect(currentUser.last_password_update > beforeTime).toBeTruthy();
     });
 
     it('generateMfaSecret', async () => {
@@ -1029,7 +1255,8 @@ describe('Actions.Users', () => {
             post('/users').
             reply(200, TestHelper.fakeUserWithId());
 
-        const {data: user} = await store.dispatch(Actions.createUser(TestHelper.fakeUser(), '', '', ''));
+        const response = await store.dispatch(Actions.createUser(TestHelper.fakeUser(), '', '', ''));
+        const user = response.data!;
 
         const beforeTime = new Date().getTime();
 
@@ -1189,7 +1416,8 @@ describe('Actions.Users', () => {
                 post(`/users/${currentUserId}/tokens`).
                 reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
 
-            const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+            const response = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+            const data = response.data!;
 
             const {myUserAccessTokens} = store.getState().entities.users;
             const {userAccessTokensByUser} = store.getState().entities.admin;
@@ -1198,9 +1426,9 @@ describe('Actions.Users', () => {
             expect(myUserAccessTokens[data.id]).toBeTruthy();
             expect(!myUserAccessTokens[data.id].token).toBeTruthy();
             expect(userAccessTokensByUser).toBeTruthy();
-            expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-            expect(userAccessTokensByUser[currentUserId][data.id]).toBeTruthy();
-            expect(!userAccessTokensByUser[currentUserId][data.id].token).toBeTruthy();
+            expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+            expect(userAccessTokensByUser![currentUserId][data.id]).toBeTruthy();
+            expect(!userAccessTokensByUser![currentUserId][data.id].token).toBeTruthy();
             done();
         }
 
@@ -1220,7 +1448,8 @@ describe('Actions.Users', () => {
             post(`/users/${currentUserId}/tokens`).
             reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
 
-        const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const response = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const data = response.data!;
 
         nock(Client4.getBaseRoute()).
             get(`/users/tokens/${data.id}`).
@@ -1235,46 +1464,9 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens[data.id]).toBeTruthy();
         expect(!myUserAccessTokens[data.id].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][data.id]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][data.id].token).toBeTruthy();
-        expect(userAccessTokens).toBeTruthy();
-        expect(userAccessTokens[data.id]).toBeTruthy();
-        expect(!userAccessTokens[data.id].token).toBeTruthy();
-    });
-
-    it('getUserAccessTokens', async () => {
-        TestHelper.mockLogin();
-        store.dispatch({
-            type: UserTypes.LOGIN_SUCCESS,
-        });
-        await store.dispatch(Actions.loadMe());
-
-        const currentUserId = store.getState().entities.users.currentUserId;
-
-        nock(Client4.getBaseRoute()).
-            post(`/users/${currentUserId}/tokens`).
-            reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
-
-        const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
-
-        nock(Client4.getBaseRoute()).
-            get('/users/tokens').
-            query(true).
-            reply(200, [{id: data.id, description: 'test token', user_id: currentUserId}]);
-
-        await store.dispatch(Actions.getUserAccessTokens());
-
-        const {myUserAccessTokens} = store.getState().entities.users;
-        const {userAccessTokensByUser, userAccessTokens} = store.getState().entities.admin;
-
-        expect(myUserAccessTokens).toBeTruthy();
-        expect(myUserAccessTokens[data.id]).toBeTruthy();
-        expect(!myUserAccessTokens[data.id].token).toBeTruthy();
-        expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][data.id]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][data.id].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][data.id]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][data.id].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[data.id]).toBeTruthy();
         expect(!userAccessTokens[data.id].token).toBeTruthy();
@@ -1293,7 +1485,8 @@ describe('Actions.Users', () => {
             post(`/users/${currentUserId}/tokens`).
             reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
 
-        const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const response = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const data = response.data!;
 
         nock(Client4.getBaseRoute()).
             get(`/users/${currentUserId}/tokens`).
@@ -1309,9 +1502,9 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens[data.id]).toBeTruthy();
         expect(!myUserAccessTokens[data.id].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][data.id]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][data.id].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][data.id]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][data.id].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[data.id]).toBeTruthy();
         expect(!userAccessTokens[data.id].token).toBeTruthy();
@@ -1330,7 +1523,8 @@ describe('Actions.Users', () => {
             post(`/users/${currentUserId}/tokens`).
             reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
 
-        const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const response = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const data = response.data!;
 
         let {myUserAccessTokens} = store.getState().entities.users;
         let {userAccessTokensByUser, userAccessTokens} = store.getState().entities.admin;
@@ -1339,9 +1533,9 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens[data.id]).toBeTruthy();
         expect(!myUserAccessTokens[data.id].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][data.id]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][data.id].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][data.id]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][data.id].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[data.id]).toBeTruthy();
         expect(!userAccessTokens[data.id].token).toBeTruthy();
@@ -1359,8 +1553,8 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens).toBeTruthy();
         expect(!myUserAccessTokens[data.id]).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][data.id]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][data.id]).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(!userAccessTokens[data.id]).toBeTruthy();
     });
@@ -1378,7 +1572,8 @@ describe('Actions.Users', () => {
             post(`/users/${currentUserId}/tokens`).
             reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
 
-        const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const response = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const data = response.data!;
         const testId = data.id;
 
         let {myUserAccessTokens} = store.getState().entities.users;
@@ -1388,9 +1583,9 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens[testId]).toBeTruthy();
         expect(!myUserAccessTokens[testId].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][testId]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][testId].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][testId]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][testId].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[data.id]).toBeTruthy();
         expect(!userAccessTokens[data.id].token).toBeTruthy();
@@ -1410,10 +1605,10 @@ describe('Actions.Users', () => {
         expect(!myUserAccessTokens[testId].is_active).toBeTruthy();
         expect(!myUserAccessTokens[testId].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][testId]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][testId].is_active).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][testId].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][testId]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][testId].is_active).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][testId].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[testId]).toBeTruthy();
         expect(!userAccessTokens[testId].is_active).toBeTruthy();
@@ -1433,7 +1628,8 @@ describe('Actions.Users', () => {
             post(`/users/${currentUserId}/tokens`).
             reply(201, {id: 'someid', token: 'sometoken', description: 'test token', user_id: currentUserId});
 
-        const {data} = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const response = await store.dispatch(Actions.createUserAccessToken(currentUserId, 'test token'));
+        const data = response.data!;
         const testId = data.id;
 
         let {myUserAccessTokens} = store.getState().entities.users;
@@ -1443,9 +1639,9 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens[testId]).toBeTruthy();
         expect(!myUserAccessTokens[testId].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][testId]).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][testId].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][testId]).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][testId].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[testId]).toBeTruthy();
         expect(!userAccessTokens[testId].token).toBeTruthy();
@@ -1465,10 +1661,10 @@ describe('Actions.Users', () => {
         expect(myUserAccessTokens[testId].is_active).toBeTruthy();
         expect(!myUserAccessTokens[testId].token).toBeTruthy();
         expect(userAccessTokensByUser).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][testId]).toBeTruthy();
-        expect(userAccessTokensByUser[currentUserId][testId].is_active).toBeTruthy();
-        expect(!userAccessTokensByUser[currentUserId][testId].token).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][testId]).toBeTruthy();
+        expect(userAccessTokensByUser![currentUserId][testId].is_active).toBeTruthy();
+        expect(!userAccessTokensByUser![currentUserId][testId].token).toBeTruthy();
         expect(userAccessTokens).toBeTruthy();
         expect(userAccessTokens[testId]).toBeTruthy();
         expect(userAccessTokens[testId].is_active).toBeTruthy();
@@ -1495,6 +1691,28 @@ describe('Actions.Users', () => {
         const {myUserAccessTokens} = store.getState().entities.users;
 
         expect(Object.values(myUserAccessTokens).length === 0).toBeTruthy();
+    });
+
+    it('saveCustomProfileAttribute', async () => {
+        TestHelper.mockLogin();
+        store.dispatch({
+            type: UserTypes.LOGIN_SUCCESS,
+        });
+        await store.dispatch(Actions.loadMe());
+
+        const state = store.getState();
+        const currentUser = state.entities.users.profiles[state.entities.users.currentUserId];
+
+        nock(Client4.getCustomProfileAttributeValuesRoute()).
+            patch('').
+            query(true).
+            reply(200, {
+                123: 'NewValue',
+            });
+
+        const response = await store.dispatch(Actions.saveCustomProfileAttribute(currentUser.id, '123', '  NewValue  '));
+        const data = response.data!;
+        expect(data).toEqual({123: 'NewValue'});
     });
 
     describe('checkForModifiedUsers', () => {

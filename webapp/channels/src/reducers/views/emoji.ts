@@ -4,11 +4,12 @@
 import {combineReducers} from 'redux';
 
 import {UserTypes} from 'mattermost-redux/action_types';
-import type {GenericAction} from 'mattermost-redux/types/actions';
 
 import {ActionTypes, Locations} from 'utils/constants';
 
-function emojiPickerCustomPage(state = 0, action: GenericAction) {
+import type {MMAction} from 'types/store';
+
+function emojiPickerCustomPage(state = 0, action: MMAction) {
     switch (action.type) {
     case ActionTypes.INCREMENT_EMOJI_PICKER_PAGE:
         return state + 1;
@@ -19,7 +20,7 @@ function emojiPickerCustomPage(state = 0, action: GenericAction) {
     }
 }
 
-function shortcutReactToLastPostEmittedFrom(state = '', action: GenericAction) {
+function shortcutReactToLastPostEmittedFrom(state = '', action: MMAction) {
     switch (action.type) {
     case ActionTypes.EMITTED_SHORTCUT_REACT_TO_LAST_POST:
         if (action.payload === Locations.CENTER) {

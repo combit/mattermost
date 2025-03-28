@@ -64,41 +64,6 @@ describe('Actions.General', () => {
         expect(serverVersion).toEqual(version);
     });
 
-    it('getDataRetentionPolicy', async () => {
-        const responseData = {
-            message_deletion_enabled: true,
-            file_deletion_enabled: false,
-            message_retention_cutoff: Date.now(),
-            file_retention_cutoff: 0,
-        };
-
-        nock(Client4.getBaseRoute()).
-            get('/data_retention/policy').
-            query(true).
-            reply(200, responseData);
-
-        await store.dispatch(Actions.getDataRetentionPolicy());
-        await TestHelper.wait(100);
-        const {dataRetentionPolicy} = store.getState().entities.general;
-        expect(dataRetentionPolicy).toEqual(responseData);
-    });
-
-    it('getFirstAdminVisitMarketplaceStatus', async () => {
-        const responseData = {
-            name: 'FirstAdminVisitMarketplace',
-            value: 'false',
-        };
-
-        nock(Client4.getPluginsRoute()).
-            get('/marketplace/first_admin_visit').
-            query(true).
-            reply(200, responseData);
-
-        await store.dispatch(Actions.getFirstAdminVisitMarketplaceStatus());
-        const {firstAdminVisitMarketplaceStatus} = store.getState().entities.general;
-        expect(firstAdminVisitMarketplaceStatus).toEqual(false);
-    });
-
     it('setFirstAdminVisitMarketplaceStatus', async () => {
         nock(Client4.getPluginsRoute()).
             post('/marketplace/first_admin_visit').
@@ -108,5 +73,22 @@ describe('Actions.General', () => {
 
         const {firstAdminVisitMarketplaceStatus} = store.getState().entities.general;
         expect(firstAdminVisitMarketplaceStatus).toEqual(true);
+    });
+
+    it('getCustomProfileAttributes', async () => {
+        nock(Client4.getCustomProfileAttributeFieldsRoute()).
+            get('').
+            query(true).
+            reply(200, [{id: '123', name: 'test attribute', dataType: 'text'}]);
+
+        await store.dispatch(Actions.getCustomProfileAttributeFields());
+
+        const customProfileAttributes = store.getState().entities.general.customProfileAttributes;
+
+        // Check a few basic fields since they may change over time
+        expect(Object.keys(customProfileAttributes).length).toEqual(1);
+        expect(customProfileAttributes[123].id).toEqual('123');
+        expect(customProfileAttributes[123].name).toEqual('test attribute');
+        expect(customProfileAttributes[123].dataType).toEqual('text');
     });
 });
