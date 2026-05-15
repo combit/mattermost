@@ -5,7 +5,7 @@ import classNames from 'classnames';
 import React, {useCallback, useRef, useState, useMemo} from 'react';
 import {FormattedList, FormattedMessage, useIntl} from 'react-intl';
 import {useDispatch, useSelector} from 'react-redux';
-import type {ValueType} from 'react-select';
+import type {OnChangeValue} from 'react-select';
 
 import {GenericModal} from '@mattermost/components';
 import type {Post, PostPreviewMetadata} from '@mattermost/types/posts';
@@ -68,15 +68,14 @@ const ForwardPostModal = ({onExited, post}: Props) => {
 
     const bodyRef = useRef<HTMLDivElement>();
 
-    const measuredRef = useCallback((node) => {
+    const measuredRef = useCallback((node: HTMLDivElement) => {
         if (node !== null) {
             bodyRef.current = node;
             setBodyHeight(node.getBoundingClientRect().height);
         }
     }, []);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const onHeightChange = (width: number, height: number) => {
+    const onHeightChange = () => {
         if (bodyRef.current) {
             setBodyHeight(bodyRef.current.getBoundingClientRect().height);
         }
@@ -108,7 +107,7 @@ const ForwardPostModal = ({onExited, post}: Props) => {
     }, [onExited]);
 
     const handleChannelSelect = useCallback(
-        (channel: ValueType<ChannelOption>) => {
+        (channel: OnChangeValue<ChannelOption, boolean>) => {
             if (Array.isArray(channel)) {
                 setSelectedChannel(channel[0]);
             }
@@ -162,7 +161,6 @@ const ForwardPostModal = ({onExited, post}: Props) => {
                     defaultMessage='This message is from a private conversation and can only be shared with {participants}'
                     values={{
                         participants: <FormattedList value={participants}/>,
-                        strong: (x: React.ReactNode) => <strong>{x}</strong>,
                     }}
                 />
             );

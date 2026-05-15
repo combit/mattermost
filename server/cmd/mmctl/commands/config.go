@@ -45,7 +45,7 @@ var ConfigSetCmd = &cobra.Command{
 	Use:     "set",
 	Short:   "Set config setting",
 	Long:    "Sets the value of a config setting by its name in dot notation. Accepts multiple values for array settings",
-	Example: "config set SqlSettings.DriverName mysql\nconfig set SqlSettings.DataSourceReplicas \"replica1\" \"replica2\"",
+	Example: "config set SqlSettings.DriverName postgres\nconfig set SqlSettings.DataSourceReplicas \"replica1\" \"replica2\"",
 	Args:    cobra.MinimumNArgs(2),
 	RunE:    withClient(configSetCmdF),
 }
@@ -222,7 +222,7 @@ func setValueWithConversion(val reflect.Value, newValue any) error {
 		bits := val.Type().Bits()
 		v, err := strconv.ParseInt(newValue.(string), 10, bits)
 		if err != nil {
-			return fmt.Errorf("target value is of type %v and provided value is not, err: %v", val.Kind(), err)
+			return fmt.Errorf("target value is of type %v and provided value is not, err: %w", val.Kind(), err)
 		}
 		val.SetInt(v)
 		return nil
@@ -230,7 +230,7 @@ func setValueWithConversion(val reflect.Value, newValue any) error {
 		bits := val.Type().Bits()
 		v, err := strconv.ParseFloat(newValue.(string), bits)
 		if err != nil {
-			return fmt.Errorf("target value is of type %v and provided value is not, err: %v", val.Kind(), err)
+			return fmt.Errorf("target value is of type %v and provided value is not, err: %w", val.Kind(), err)
 		}
 		val.SetFloat(v)
 		return nil
@@ -240,7 +240,7 @@ func setValueWithConversion(val reflect.Value, newValue any) error {
 	case reflect.Bool:
 		v, err := strconv.ParseBool(newValue.(string))
 		if err != nil {
-			return fmt.Errorf("target value is of type %v and provided value is not, err: %v", val.Kind(), err)
+			return fmt.Errorf("target value is of type %v and provided value is not, err: %w", val.Kind(), err)
 		}
 		val.SetBool(v)
 		return nil

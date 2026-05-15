@@ -7,18 +7,24 @@ import type {MouseEvent, ReactNode, RefObject} from 'react';
 import {FormattedMessage, injectIntl} from 'react-intl';
 import type {WrappedComponentProps} from 'react-intl';
 
+import {getPopoutChannelTitle} from 'components/channel_popout/channel_popout';
 import CustomStatusEmoji from 'components/custom_status/custom_status_emoji';
 import CustomStatusText from 'components/custom_status/custom_status_text';
+import PopoutButton from 'components/popout_button';
 import Timestamp from 'components/timestamp';
+import Tag from 'components/widgets/tag/tag';
 import WithTooltip from 'components/with_tooltip';
 
 import CallButton from 'plugins/call_button';
 import ChannelHeaderPlug from 'plugins/channel_header_plug';
+import Pluggable from 'plugins/pluggable';
+import {getChannelRoutePathAndIdentifier} from 'utils/channel_utils';
 import {
     Constants,
     NotificationLevels,
     RHSStates,
 } from 'utils/constants';
+import {canPopout, isChannelPopoutWindow, popoutChannel} from 'utils/popouts/popout_windows';
 import {isEmptyObject} from 'utils/utils';
 
 import ChannelHeaderText from './channel_header_text';
@@ -40,6 +46,12 @@ class ChannelHeader extends React.PureComponent<Props> {
 
     componentDidMount() {
         this.props.actions.getCustomEmojisInText(this.props.channel ? this.props.channel.header : '');
+
+        // Fetch remote names for shared channels on initial mount
+        if (this.props.channel?.shared) {
+            // Don't force refresh on initial load, use cached data if available
+            this.props.actions.fetchChannelRemotes(this.props.channel.id);
+        }
     }
 
     componentDidUpdate(prevProps: Props) {
@@ -47,6 +59,17 @@ class ChannelHeader extends React.PureComponent<Props> {
         const prevHeader = prevProps.channel ? prevProps.channel.header : '';
         if (header !== prevHeader) {
             this.props.actions.getCustomEmojisInText(header);
+        }
+
+        // Fetch remote names when channel changes or when a channel becomes shared
+        if (this.props.channel?.shared) {
+            if (this.props.channel.id !== prevProps.channel?.id) {
+                // For regular channel changes, use cached data if available
+                this.props.actions.fetchChannelRemotes(this.props.channel.id);
+            } else if (this.props.channel.shared !== prevProps.channel?.shared) {
+                // Only force refresh when a channel's shared status changes
+                this.props.actions.fetchChannelRemotes(this.props.channel.id, true);
+            }
         }
     }
 
@@ -75,6 +98,14 @@ class ChannelHeader extends React.PureComponent<Props> {
             this.props.actions.closeRightHandSide();
         } else if (this.props.channel) {
             this.props.actions.showChannelFiles(this.props.channel.id);
+        }
+    };
+
+    popoutChannelView = () => {
+        const {channel, team, dmUser, intl} = this.props;
+        if (channel && team) {
+            const {path, identifier} = getChannelRoutePathAndIdentifier(channel, dmUser?.username);
+            popoutChannel(intl.formatMessage(getPopoutChannelTitle(channel.type)), team.name, path, identifier);
         }
     };
 
@@ -113,7 +144,7 @@ class ChannelHeader extends React.PureComponent<Props> {
 
     render() {
         const {
-            teamId,
+            team,
             currentUser,
             gmMembers,
             channel,
@@ -141,6 +172,28 @@ class ChannelHeader extends React.PureComponent<Props> {
                         />
                     </span>
                 </span>
+            );
+        }
+
+        let autotranslationMessage: ReactNode = '';
+        if (this.props.isChannelAutotranslated) {
+            autotranslationMessage = (
+                <WithTooltip
+                    title={this.props.intl.formatMessage({id: 'channel_header.autotranslationMessage.tooltip.title', defaultMessage: 'Auto-translation is enabled'})}
+                    hint={this.props.intl.formatMessage({id: 'channel_header.autotranslationMessage.tooltip.hint', defaultMessage: 'This channel is being automatically translated to your language'})}
+                >
+                    <div
+                        className='autotranslation-header'
+                        data-testid='autotranslation-badge'
+                    >
+                        <Tag
+                            text={this.props.intl.formatMessage({id: 'channel_header.autotranslationMessage', defaultMessage: 'Auto-translated'})}
+                            icon={'translate'}
+                            size='xs'
+                            variant='default'
+                        />
+                    </div>
+                </WithTooltip>
             );
         }
 
@@ -185,7 +238,7 @@ class ChannelHeader extends React.PureComponent<Props> {
                         <span className='last-active__text'>
                             <FormattedMessage
                                 id='channel_header.lastActive'
-                                defaultMessage='Active {timestamp}'
+                                defaultMessage='Last online {timestamp}'
                                 values={{
                                     timestamp: (
                                         <Timestamp
@@ -337,6 +390,7 @@ class ChannelHeader extends React.PureComponent<Props> {
                                 <ChannelHeaderTitle
                                     dmUser={dmUser}
                                     gmMembers={gmMembers}
+                                    remoteNames={this.props.remoteNames}
                                 />
                                 <div
                                     className='channel-header__icons'
@@ -354,6 +408,11 @@ class ChannelHeader extends React.PureComponent<Props> {
                                             {channelFilesIcon}
                                         </HeaderIconWrapper>
                                     }
+                                    <Pluggable
+                                        pluggableName='ChannelHeaderIcon'
+                                        channel={channel}
+                                        channelMember={channelMember!}
+                                    />
                                 </div>
                                 <div
                                     id='channelHeaderDescription'
@@ -361,8 +420,9 @@ class ChannelHeader extends React.PureComponent<Props> {
                                 >
                                     {dmHeaderTextStatus}
                                     {hasGuestsText}
+                                    {autotranslationMessage}
                                     <ChannelHeaderText
-                                        teamId={teamId}
+                                        teamId={team?.id}
                                         channel={channel}
                                         dmUser={dmUser}
                                     />
@@ -370,11 +430,21 @@ class ChannelHeader extends React.PureComponent<Props> {
                             </div>
                         </div>
                     </div>
-                    <ChannelHeaderPlug
-                        channel={channel}
-                        channelMember={channelMember}
-                    />
-                    <CallButton/>
+                    {(!channel.shared || this.props.sharedChannelsPluginsEnabled) && (
+                        <>
+                            <ChannelHeaderPlug
+                                channel={channel}
+                                channelMember={channelMember}
+                            />
+                            <CallButton/>
+                        </>
+                    )}
+                    {canPopout() && !isChannelPopoutWindow() && (
+                        <PopoutButton
+                            className='channel-header__icon'
+                            onClick={this.popoutChannelView}
+                        />
+                    )}
                     <ChannelInfoButton channel={channel}/>
                 </div>
             </div>

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	CurrentSupportPacketVersion = 1
+	CurrentSupportPacketVersion = 2
 	SupportPacketErrorFile      = "warning.txt"
 )
 
@@ -27,6 +27,8 @@ type SupportPacketDiagnostics struct {
 	Server struct {
 		OS               string `yaml:"os"`
 		Architecture     string `yaml:"architecture"`
+		CPUCores         int    `yaml:"cpu_cores"`
+		TotalMemoryMB    uint64 `yaml:"total_memory_mb"`
 		Hostname         string `yaml:"hostname"`
 		Version          string `yaml:"version"`
 		BuildHash        string `yaml:"build_hash"`
@@ -63,31 +65,38 @@ type SupportPacketDiagnostics struct {
 
 	LDAP struct {
 		Status        string `yaml:"status,omitempty"`
-		Error         string `yaml:"erorr,omitempty"`
+		Error         string `yaml:"error,omitempty"`
 		ServerName    string `yaml:"server_name,omitempty"`
 		ServerVersion string `yaml:"server_version,omitempty"`
 	} `yaml:"ldap"`
 
+	SAML struct {
+		ProviderType string `yaml:"provider_type,omitempty"`
+	} `yaml:"saml"`
+
 	ElasticSearch struct {
+		Backend       string   `yaml:"backend,omitempty"`
 		ServerVersion string   `yaml:"server_version,omitempty"`
 		ServerPlugins []string `yaml:"server_plugins,omitempty"`
+		Error         string   `yaml:"error,omitempty"`
 	} `yaml:"elastic"`
 }
 
 type SupportPacketStats struct {
-	RegisteredUsers    int64 `yaml:"registered_users"`
-	ActiveUsers        int64 `yaml:"active_users"`
-	DailyActiveUsers   int64 `yaml:"daily_active_users"`
-	MonthlyActiveUsers int64 `yaml:"monthly_active_users"`
-	DeactivatedUsers   int64 `yaml:"deactivated_users"`
-	Guests             int64 `yaml:"guests"`
-	BotAccounts        int64 `yaml:"bot_accounts"`
-	Posts              int64 `yaml:"posts"`
-	Channels           int64 `yaml:"channels"`
-	Teams              int64 `yaml:"teams"`
-	SlashCommands      int64 `yaml:"slash_commands"`
-	IncomingWebhooks   int64 `yaml:"incoming_webhooks"`
-	OutgoingWebhooks   int64 `yaml:"outgoing_webhooks"`
+	RegisteredUsers     int64 `yaml:"registered_users"`
+	ActiveUsers         int64 `yaml:"active_users"`
+	DailyActiveUsers    int64 `yaml:"daily_active_users"`
+	MonthlyActiveUsers  int64 `yaml:"monthly_active_users"`
+	DeactivatedUsers    int64 `yaml:"deactivated_users"`
+	Guests              int64 `yaml:"guests"`
+	SingleChannelGuests int64 `yaml:"single_channel_guests"`
+	BotAccounts         int64 `yaml:"bot_accounts"`
+	Posts               int64 `yaml:"posts"`
+	Channels            int64 `yaml:"channels"`
+	Teams               int64 `yaml:"teams"`
+	SlashCommands       int64 `yaml:"slash_commands"`
+	IncomingWebhooks    int64 `yaml:"incoming_webhooks"`
+	OutgoingWebhooks    int64 `yaml:"outgoing_webhooks"`
 }
 
 // SupportPacketJobList contains the list of latest run enterprise job runs.
@@ -98,7 +107,6 @@ type SupportPacketJobList struct {
 	MessageExportJobs          []*Job `yaml:"message_export_jobs"`
 	ElasticPostIndexingJobs    []*Job `yaml:"elastic_post_indexing_jobs"`
 	ElasticPostAggregationJobs []*Job `yaml:"elastic_post_aggregation_jobs"`
-	BlevePostIndexingJobs      []*Job `yaml:"bleve_post_indexin_jobs"`
 	MigrationJobs              []*Job `yaml:"migration_jobs"`
 }
 
@@ -121,6 +129,37 @@ type SupportPacketConfig struct {
 type SupportPacketPluginList struct {
 	Enabled  []Manifest `json:"enabled"`
 	Disabled []Manifest `json:"disabled"`
+}
+
+// SupportPacketDatabaseSchema contains the database schema information.
+// It is included in the Support Packet.
+type SupportPacketDatabaseSchema struct {
+	DatabaseCollation string          `yaml:"database_collation,omitempty"`
+	DatabaseEncoding  string          `yaml:"database_encoding,omitempty"`
+	Tables            []DatabaseTable `yaml:"tables"`
+}
+
+// DatabaseTable represents a table in the database schema.
+type DatabaseTable struct {
+	Name      string            `yaml:"name"`
+	Collation string            `yaml:"collation,omitempty"`
+	Options   map[string]string `yaml:"options,omitempty"`
+	Columns   []DatabaseColumn  `yaml:"columns"`
+	Indexes   []DatabaseIndex   `yaml:"indexes,omitempty"`
+}
+
+// DatabaseColumn represents a column in a database table.
+type DatabaseColumn struct {
+	Name       string `yaml:"name"`
+	DataType   string `yaml:"data_type"`
+	MaxLength  int64  `yaml:"max_length,omitempty"`
+	IsNullable bool   `yaml:"is_nullable"`
+}
+
+// DatabaseIndex represents an index in a database table.
+type DatabaseIndex struct {
+	Name       string `yaml:"name"`
+	Definition string `yaml:"definition"`
 }
 
 type FileData struct {

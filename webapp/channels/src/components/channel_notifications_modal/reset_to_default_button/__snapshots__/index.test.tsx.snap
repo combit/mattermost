@@ -1,9 +1,9 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`ResetToDefaultButton should render if section name is valid 1`] = `
 <div>
   <button
-    class="channel-notifications-settings-modal__reset-btn"
+    class="ChannelNotificationModal__reset-btn"
     data-testid="resetToDefaultButton-desktop"
   >
     <i

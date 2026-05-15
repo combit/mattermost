@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"slices"
 	"testing"
 	"time"
@@ -19,8 +18,8 @@ import (
 )
 
 func TestGetSessionIdleTimeoutInMinutes(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	session := &model.Session{
 		UserId: model.NewId(),
@@ -98,13 +97,13 @@ func TestGetSessionIdleTimeoutInMinutes(t *testing.T) {
 }
 
 func TestUpdateSessionOnPromoteDemote(t *testing.T) {
-	th := Setup(t).InitBasic()
-	defer th.TearDown()
+	mainHelper.Parallel(t)
+	th := Setup(t).InitBasic(t)
 
 	th.App.Srv().SetLicense(model.NewTestLicense())
 
 	t.Run("Promote Guest to User updates the session", func(t *testing.T) {
-		guest := th.CreateGuest()
+		guest := th.CreateGuest(t)
 
 		session, err := th.App.CreateSession(th.Context, &model.Session{UserId: guest.Id, Props: model.StringMap{model.SessionPropIsGuest: "true"}})
 		require.Nil(t, err)
@@ -128,7 +127,7 @@ func TestUpdateSessionOnPromoteDemote(t *testing.T) {
 	})
 
 	t.Run("Demote User to Guest updates the session", func(t *testing.T) {
-		user := th.CreateUser()
+		user := th.CreateUser(t)
 
 		session, err := th.App.CreateSession(th.Context, &model.Session{UserId: user.Id, Props: model.StringMap{model.SessionPropIsGuest: "false"}})
 		require.Nil(t, err)
@@ -151,12 +150,14 @@ func TestUpdateSessionOnPromoteDemote(t *testing.T) {
 	})
 }
 
-const hourMillis int64 = 60 * 60 * 1000
-const dayMillis int64 = 24 * hourMillis
+const (
+	hourMillis int64 = 60 * 60 * 1000
+	dayMillis  int64 = 24 * hourMillis
+)
 
 func TestApp_GetSessionLengthInMillis(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	th.App.UpdateConfig(func(cfg *model.Config) { *cfg.ServiceSettings.SessionLengthMobileInHours = 3 * 24 })
 	th.App.UpdateConfig(func(cfg *model.Config) { *cfg.ServiceSettings.SessionLengthSSOInHours = 2 * 24 })
@@ -222,7 +223,8 @@ func TestApp_GetSessionLengthInMillis(t *testing.T) {
 			UserId: model.NewId(),
 			Props: map[string]string{
 				model.UserAuthServiceIsSaml: "true",
-			}}
+			},
+		}
 		session, err := th.App.CreateSession(th.Context, session)
 		require.Nil(t, err)
 
@@ -243,8 +245,8 @@ func TestApp_GetSessionLengthInMillis(t *testing.T) {
 }
 
 func TestApp_ExtendExpiryIfNeeded(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	th.App.UpdateConfig(func(cfg *model.Config) { *cfg.ServiceSettings.ExtendSessionLengthWithActivity = true })
 	th.App.UpdateConfig(func(cfg *model.Config) { *cfg.ServiceSettings.SessionLengthMobileInHours = 3 * 24 })
@@ -284,7 +286,7 @@ func TestApp_ExtendExpiryIfNeeded(t *testing.T) {
 		require.False(t, session.IsExpired())
 	})
 
-	var tests = []struct {
+	tests := []struct {
 		enabled bool
 		name    string
 		session *model.Session
@@ -334,13 +336,10 @@ func TestApp_ExtendExpiryIfNeeded(t *testing.T) {
 
 func TestGetCloudSession(t *testing.T) {
 	th := Setup(t)
-	defer func() {
-		os.Unsetenv("MM_CLOUD_API_KEY")
-		th.TearDown()
-	}()
 
 	t.Run("Matching environment variable and token should return non-nil session", func(t *testing.T) {
-		os.Setenv("MM_CLOUD_API_KEY", "mytoken")
+		// t.Setenv prevents t.Parallel — env var has no config equivalent
+		t.Setenv("MM_CLOUD_API_KEY", "mytoken")
 		session, err := th.App.GetCloudSession("mytoken")
 		require.Nil(t, err)
 		require.NotNil(t, session)
@@ -348,7 +347,8 @@ func TestGetCloudSession(t *testing.T) {
 	})
 
 	t.Run("Empty environment variable should return error", func(t *testing.T) {
-		os.Setenv("MM_CLOUD_API_KEY", "")
+		// t.Setenv prevents t.Parallel — env var has no config equivalent
+		t.Setenv("MM_CLOUD_API_KEY", "")
 		session, err := th.App.GetCloudSession("mytoken")
 		require.Nil(t, session)
 		require.NotNil(t, err)
@@ -356,7 +356,8 @@ func TestGetCloudSession(t *testing.T) {
 	})
 
 	t.Run("Mismatched env variable and token should return error", func(t *testing.T) {
-		os.Setenv("MM_CLOUD_API_KEY", "mytoken")
+		// t.Setenv prevents t.Parallel — env var has no config equivalent
+		t.Setenv("MM_CLOUD_API_KEY", "mytoken")
 		session, err := th.App.GetCloudSession("myincorrecttoken")
 		require.Nil(t, session)
 		require.NotNil(t, err)
@@ -365,6 +366,7 @@ func TestGetCloudSession(t *testing.T) {
 }
 
 func TestGetRemoteClusterSession(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
 	token := model.NewId()
 	remoteID := model.NewId()
@@ -400,15 +402,15 @@ func TestGetRemoteClusterSession(t *testing.T) {
 }
 
 func TestSessionsLimit(t *testing.T) {
-	th := Setup(t).InitBasic()
-	defer th.TearDown()
+	mainHelper.Parallel(t)
+	th := Setup(t).InitBasic(t)
 
 	user := th.BasicUser
 	var sessions []*model.Session
 
 	r := &http.Request{}
 	w := httptest.NewRecorder()
-	for i := 0; i < maxSessionsLimit; i++ {
+	for range maxSessionsLimit {
 		session, err := th.App.DoLogin(th.Context, w, r, th.BasicUser, "", false, false, false)
 		require.Nil(t, err)
 		sessions = append(sessions, session)
@@ -425,7 +427,7 @@ func TestSessionsLimit(t *testing.T) {
 	}
 
 	// Now add 10 more.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		session, err := th.App.DoLogin(th.Context, w, r, th.BasicUser, "", false, false, false)
 		require.Nil(t, err, "should not have an error creating user sessions")
 
@@ -439,7 +441,7 @@ func TestSessionsLimit(t *testing.T) {
 	gotSessions, _ = th.App.GetSessions(th.Context, user.Id)
 	require.Equal(t, maxSessionsLimit, len(gotSessions), "should have maxSessionsLimit number of sessions")
 
-	// Ensure the the oldest sessions were removed first.
+	// Ensure the oldest sessions were removed first.
 	slices.Reverse(gotSessions)
 	for i, sess := range gotSessions {
 		require.Equal(t, sessions[i].Id, sess.Id)
@@ -447,8 +449,8 @@ func TestSessionsLimit(t *testing.T) {
 }
 
 func TestSetExtraSessionProps(t *testing.T) {
-	th := Setup(t).InitBasic()
-	defer th.TearDown()
+	mainHelper.Parallel(t)
+	th := Setup(t).InitBasic(t)
 
 	r := &http.Request{}
 	w := httptest.NewRecorder()

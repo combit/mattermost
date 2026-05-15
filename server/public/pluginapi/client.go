@@ -1,7 +1,7 @@
 package pluginapi
 
 import (
-	"github.com/blang/semver/v4"
+	"github.com/Masterminds/semver/v3"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/pkg/errors"
 )
@@ -25,6 +25,7 @@ type Client struct {
 	Mail          MailService
 	Plugin        PluginService
 	Post          PostService
+	Property      PropertyService
 	Session       SessionService
 	Store         *StoreService
 	System        SystemService
@@ -55,6 +56,7 @@ func NewClient(api plugin.API, driver plugin.Driver) *Client {
 		Mail:          MailService{api: api},
 		Plugin:        PluginService{api: api},
 		Post:          PostService{api: api},
+		Property:      PropertyService{api: api},
 		Session:       SessionService{api: api},
 		Store: &StoreService{
 			api:    api,
@@ -71,7 +73,7 @@ func ensureServerVersion(api plugin.API, required string) error {
 	currentVersion := semver.MustParse(serverVersion)
 	requiredVersion := semver.MustParse(required)
 
-	if currentVersion.LT(requiredVersion) {
+	if currentVersion.LessThan(requiredVersion) {
 		return errors.Errorf("incompatible server version for plugin, minimum required version: %s, current version: %s", required, serverVersion)
 	}
 

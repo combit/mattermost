@@ -32,6 +32,20 @@ export type ChannelNotifyProps = {
     channel_auto_follow_threads: 'off' | 'on';
 };
 
+export type ChannelBanner = {
+    enabled?: boolean;
+    text?: string;
+    background_color?: string;
+}
+
+export function channelBannerEnabled(banner: ChannelBanner | undefined): boolean {
+    if (!banner) {
+        return false;
+    }
+
+    return Boolean(banner.enabled) && Boolean(banner.text) && Boolean(banner.background_color);
+}
+
 export type Channel = {
     id: string;
     create_at: number;
@@ -53,6 +67,12 @@ export type Channel = {
     shared?: boolean;
     props?: Record<string, any>;
     policy_id?: string | null;
+    banner_info?: ChannelBanner;
+    policy_enforced?: boolean;
+    policy_is_active?: boolean;
+    default_category_name?: string;
+    managed_category_name?: string;
+    autotranslation?: boolean;
 };
 
 export type ServerChannel = Channel & {
@@ -118,6 +138,7 @@ export type ChannelMembership = {
     scheme_user: boolean;
     scheme_admin: boolean;
     post_root_id?: string;
+    autotranslation_disabled?: boolean;
 };
 
 export type ChannelUnread = {
@@ -159,6 +180,7 @@ export type ChannelsState = {
     channelMemberCountsByGroup: RelationOneToOne<Channel, ChannelMemberCountsByGroup>;
     messageCounts: RelationOneToOne<Channel, ChannelMessageCount>;
     channelsMemberCount: Record<string, number>;
+    restrictedDMs: RelationOneToOne<Channel, boolean>;
 };
 
 export type ChannelModeration = {
@@ -215,4 +237,7 @@ export type ChannelSearchOpts = {
     deleted?: boolean;
     page?: number;
     per_page?: number;
+    access_control_policy_enforced?: boolean;
+    exclude_access_control_policy_enforced?: boolean;
+    parent_access_control_policy_id?: string;
 };

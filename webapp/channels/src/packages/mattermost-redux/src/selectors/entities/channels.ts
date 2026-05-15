@@ -5,6 +5,7 @@ import max from 'lodash/max';
 
 import type {
     Channel,
+    ChannelBanner,
     ChannelMemberCountsByGroup,
     ChannelMembership,
     ChannelMessageCount,
@@ -33,6 +34,7 @@ import {
     getMyCurrentChannelMembership as getMyCurrentChannelMembershipInternal,
     getUsers,
 } from 'mattermost-redux/selectors/entities/common';
+import {getConfig} from 'mattermost-redux/selectors/entities/general';
 import {
     getTeammateNameDisplaySetting,
     isCollapsedThreadsEnabled,
@@ -42,7 +44,7 @@ import {
     haveICurrentChannelPermission,
     haveITeamPermission,
 } from 'mattermost-redux/selectors/entities/roles';
-import {getCurrentTeamId, getMyTeams, getTeamMemberships} from 'mattermost-redux/selectors/entities/teams';
+import {getCurrentTeamId, getMyTeams} from 'mattermost-redux/selectors/entities/teams';
 import {
     getCurrentUserId,
     getStatusForUserId,
@@ -66,6 +68,7 @@ import {
 } from 'mattermost-redux/utils/channel_utils';
 import {createIdsSelector} from 'mattermost-redux/utils/helpers';
 
+import {getCurrentUserLocale} from './i18n';
 import {isPostPriorityEnabled} from './posts';
 import {getThreadCounts, getThreadCountsIncludingDirect} from './threads';
 
@@ -612,8 +615,6 @@ export const getUnreadStatus: (state: GlobalState) => BasicUnreadStatus = create
     getUsers,
     getCurrentUserId,
     getCurrentTeamId,
-    getMyTeams,
-    getTeamMemberships,
     isCollapsedThreadsEnabled,
     getThreadCounts,
     getThreadCountsIncludingDirect,
@@ -624,28 +625,17 @@ export const getUnreadStatus: (state: GlobalState) => BasicUnreadStatus = create
         users,
         currentUserId,
         currentTeamId,
-        myTeams,
-        myTeamMemberships,
         collapsedThreads,
         threadCounts,
         threadCountsIncludingDirect,
     ) => {
         const {
-            messages: currentTeamUnreadMessages,
-            mentions: currentTeamUnreadMentions,
+            messages: unreadMessages,
+            mentions: unreadMentions,
         } = Object.entries(myMembers).reduce((counts, [channelId, membership]) => {
             const channel = channels[channelId];
 
             if (!channel || !membership) {
-                return counts;
-            }
-
-            if (
-                // other-team non-DM/non-GM channels
-                channel.team_id !== currentTeamId &&
-                channel.type !== General.DM_CHANNEL &&
-                channel.type !== General.GM_CHANNEL
-            ) {
                 return counts;
             }
 
@@ -654,8 +644,12 @@ export const getUnreadStatus: (state: GlobalState) => BasicUnreadStatus = create
                 return counts;
             }
 
+            if (isChannelMuted(membership)) {
+                return counts;
+            }
+
             const mentions = collapsedThreads ? membership.mention_count_root : membership.mention_count;
-            if (mentions && !isChannelMuted(membership)) {
+            if (mentions) {
                 counts.mentions += mentions;
             }
 
@@ -670,26 +664,8 @@ export const getUnreadStatus: (state: GlobalState) => BasicUnreadStatus = create
             mentions: 0,
         });
 
-        // Includes mention count and message count from teams other than the current team
-        // This count does not include GM's and DM's
-        const {
-            messages: otherTeamsUnreadMessages,
-            mentions: otherTeamsUnreadMentions,
-        } = myTeams.reduce((acc, team) => {
-            if (currentTeamId !== team.id) {
-                const member = myTeamMemberships[team.id];
-                acc.messages += collapsedThreads ? member.msg_count_root : member.msg_count;
-                acc.mentions += collapsedThreads ? member.mention_count_root : member.mention_count;
-            }
-
-            return acc;
-        }, {
-            messages: 0,
-            mentions: 0,
-        });
-
-        const totalUnreadMessages = currentTeamUnreadMessages + otherTeamsUnreadMessages;
-        let totalUnreadMentions = currentTeamUnreadMentions + otherTeamsUnreadMentions;
+        const totalUnreadMessages = unreadMessages;
+        let totalUnreadMentions = unreadMentions;
         let anyUnreadThreads = false;
 
         // when collapsed threads are enabled, we start with root-post counts from channels, then
@@ -1265,6 +1241,11 @@ export const getMyFirstChannelForTeams: (state: GlobalState) => RelationOneToOne
     },
 );
 
+export const getRedirectChannelNameForCurrentTeam = (state: GlobalState): string => {
+    const currentTeamId = getCurrentTeamId(state);
+    return getRedirectChannelNameForTeam(state, currentTeamId);
+};
+
 export const getRedirectChannelNameForTeam = (state: GlobalState, teamId: string): string => {
     const defaultChannelForTeam = getDefaultChannelForTeams(state)[teamId];
     const canIJoinPublicChannelsInTeam = haveITeamPermission(state,
@@ -1471,3 +1452,83 @@ export const isDeactivatedDirectChannel = (state: GlobalState, channelId: string
     const teammate = getDirectTeammate(state, channelId);
     return Boolean(teammate && teammate.delete_at);
 };
+
+export function getChannelBanner(state: GlobalState, channelId: string): ChannelBanner | undefined {
+    const channel = getChannel(state, channelId);
+    return channel ? channel.banner_info : undefined;
+}
+
+// isChannelAutotranslated returns whether the channel is autotranslated
+// in general terms in this server.
+export function isChannelAutotranslated(state: GlobalState, channelId: string): boolean {
+    const channel = getChannel(state, channelId);
+    const config = getConfig(state);
+
+    if (!channel?.autotranslation || config?.EnableAutoTranslation !== 'true') {
+        return false;
+    }
+
+    // When autotranslation is restricted on DMs and GMs, do not consider them autotranslated
+    const isDMOrGM = channel.type === General.DM_CHANNEL || channel.type === General.GM_CHANNEL;
+    if (isDMOrGM && config?.RestrictDMAndGMAutotranslation === 'true') {
+        return false;
+    }
+
+    return true;
+}
+
+// isMyChannelAutotranslated returns whether the current user is seeing the autotranslated
+// version of the channel.
+export function isMyChannelAutotranslated(state: GlobalState, channelId: string): boolean {
+    if (!isChannelAutotranslated(state, channelId)) {
+        return false;
+    }
+
+    if (!isUserLanguageSupportedForAutotranslation(state)) {
+        return false;
+    }
+
+    const myChannelMember = getMyChannelMember(state, channelId);
+    return !myChannelMember?.autotranslation_disabled;
+}
+
+export function isUserLanguageSupportedForAutotranslation(state: GlobalState): boolean {
+    const locale = getCurrentUserLocale(state);
+    const config = getConfig(state);
+    if (config?.EnableAutoTranslation !== 'true') {
+        return false;
+    }
+    const targetLanguages = config?.AutoTranslationLanguages?.split(',').map((l) => l.trim()).filter(Boolean);
+    return Boolean(targetLanguages?.length && targetLanguages.includes(locale));
+}
+
+export function hasAutotranslationBecomeEnabled(state: GlobalState, channelOrMember: Channel | ChannelMembership) {
+    const autotranslationEnabled = getConfig(state)?.EnableAutoTranslation === 'true';
+
+    let existingChannel: Channel | undefined;
+    let existingMember: ChannelMembership | undefined;
+    let newChannel: Channel | undefined;
+    let newMember: ChannelMembership | undefined;
+    if ('channel_id' in channelOrMember) {
+        newMember = channelOrMember;
+        existingChannel = getChannel(state, newMember.channel_id);
+        existingMember = getMyChannelMember(state, newMember.channel_id);
+        newChannel = existingChannel;
+    } else {
+        newChannel = channelOrMember;
+        existingChannel = getChannel(state, newChannel.id);
+        existingMember = getMyChannelMember(state, newChannel.id);
+        newMember = existingMember;
+    }
+
+    if (!existingChannel || !existingMember) {
+        // channel is not in the state, so there is no need
+        // to reload posts
+        return false;
+    }
+
+    const wasTranslating = autotranslationEnabled && existingChannel.autotranslation && !existingMember.autotranslation_disabled;
+    const isTranslating = autotranslationEnabled && newChannel?.autotranslation && !newMember?.autotranslation_disabled;
+
+    return !wasTranslating && isTranslating;
+}

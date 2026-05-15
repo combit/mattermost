@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/shared/mlog"
-	"github.com/mattermost/mattermost/server/v8/channels/audit"
 	"github.com/mattermost/mattermost/server/v8/platform/shared/web"
 )
 
@@ -122,7 +122,7 @@ func downloadJob(c *Context, w http.ResponseWriter, r *http.Request) {
 	if !filepath.IsLocal(cleanedExportDir) {
 		c.Err = model.NewAppError("unableToDownloadJob", "api.job.unable_to_download_job", nil,
 			"job.Data did not include export_dir, export_dir was malformed, or jobId.zip wasn't found",
-			http.StatusNotFound).Wrap(err)
+			http.StatusNotFound)
 		return
 	}
 
@@ -149,9 +149,9 @@ func createJob(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditRec := c.MakeAuditRecord("createJob", audit.Fail)
+	auditRec := c.MakeAuditRecord(model.AuditEventCreateJob, model.AuditStatusFail)
 	defer c.LogAuditRec(auditRec)
-	audit.AddEventParameterAuditable(auditRec, "job", &job)
+	model.AddEventParameterAuditableToAuditRec(auditRec, "job", &job)
 
 	hasPermission, permissionRequired := c.App.SessionHasPermissionToCreateJob(*c.AppContext.Session(), &job)
 	if permissionRequired == nil {
@@ -162,6 +162,19 @@ func createJob(c *Context, w http.ResponseWriter, r *http.Request) {
 	if !hasPermission {
 		c.SetPermissionError(permissionRequired)
 		return
+	}
+
+	// Inject requester context for self-inclusion resolution.
+	if job.Type == model.JobTypeAccessControlSync {
+		if job.Data == nil {
+			job.Data = make(model.StringMap)
+		}
+		job.Data["requester_id"] = c.AppContext.Session().UserId
+		if c.App.SessionHasPermissionTo(*c.AppContext.Session(), model.PermissionManageSystem) {
+			job.Data["requester_is_admin"] = "true"
+		} else {
+			delete(job.Data, "requester_is_admin")
+		}
 	}
 
 	rjob, err := c.App.CreateJob(c.AppContext, &job)
@@ -234,7 +247,7 @@ func getJobs(c *Context, w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		jobs, appErr = c.App.GetJobsByTypesPage(c.AppContext, validJobTypes, c.Params.Page, c.Params.PerPage)
 	} else {
-		jobs, appErr = c.App.GetJobsByTypeAndStatus(c.AppContext, validJobTypes, status, c.Params.Page, c.Params.PerPage)
+		jobs, appErr = c.App.GetJobsByTypesAndStatuses(c.AppContext, validJobTypes, []string{status}, c.Params.Page, c.Params.PerPage)
 	}
 
 	if appErr != nil {
@@ -263,15 +276,55 @@ func getJobsByType(c *Context, w http.ResponseWriter, r *http.Request) {
 		c.Err = model.NewAppError("getJobsByType", "api.job.retrieve.nopermissions", nil, "", http.StatusBadRequest)
 		return
 	}
-	if !hasPermission {
+
+	// Team admin path: allow reading access_control_sync jobs scoped to their team.
+	teamID := r.URL.Query().Get("team_id")
+	hasTeamFilter := false
+	if teamID != "" {
+		if !model.IsValidId(teamID) {
+			c.SetInvalidURLParam("team_id")
+			return
+		}
+		hasTeamFilter = true
+	}
+	isTeamScopedSyncRequest := !hasPermission &&
+		c.Params.JobType == model.JobTypeAccessControlSync &&
+		hasTeamFilter &&
+		c.App.SessionHasPermissionToTeam(*c.AppContext.Session(), teamID, model.PermissionManageTeamAccessRules)
+
+	if !hasPermission && !isTeamScopedSyncRequest {
 		c.SetPermissionError(permissionRequired)
 		return
 	}
 
-	jobs, appErr := c.App.GetJobsByTypePage(c.AppContext, c.Params.JobType, c.Params.Page, c.Params.PerPage)
-	if appErr != nil {
-		c.Err = appErr
-		return
+	var jobs []*model.Job
+
+	if hasTeamFilter {
+		// When team_id is provided, return only jobs scoped to that team.
+		// Sorted by CreateAt DESC; limited to the requested page size.
+		teamJobs, appErr := c.App.GetJobsByTypeAndData(c.AppContext, c.Params.JobType, map[string]string{"team_id": teamID})
+		if appErr != nil {
+			c.Err = appErr
+			return
+		}
+		sort.Slice(teamJobs, func(i, j int) bool {
+			return teamJobs[i].CreateAt > teamJobs[j].CreateAt
+		})
+		start := c.Params.Page * c.Params.PerPage
+		if start >= len(teamJobs) {
+			jobs = []*model.Job{}
+		} else {
+			end := min(start+c.Params.PerPage, len(teamJobs))
+			jobs = teamJobs[start:end]
+		}
+	} else {
+		// Store returns jobs ordered by CreateAt DESC; pagination applied at the store level.
+		var appErr *model.AppError
+		jobs, appErr = c.App.GetJobsByTypePage(c.AppContext, c.Params.JobType, c.Params.Page, c.Params.PerPage)
+		if appErr != nil {
+			c.Err = appErr
+			return
+		}
 	}
 
 	js, err := json.Marshal(jobs)
@@ -291,9 +344,9 @@ func cancelJob(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditRec := c.MakeAuditRecord("cancelJob", audit.Fail)
+	auditRec := c.MakeAuditRecord(model.AuditEventCancelJob, model.AuditStatusFail)
 	defer c.LogAuditRec(auditRec)
-	audit.AddEventParameter(auditRec, "job_id", c.Params.JobId)
+	model.AddEventParameterToAuditRec(auditRec, "job_id", c.Params.JobId)
 
 	job, err := c.App.GetJob(c.AppContext, c.Params.JobId)
 	if err != nil {
@@ -332,9 +385,9 @@ func updateJobStatus(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditRec := c.MakeAuditRecord("updateJobStatus", audit.Fail)
+	auditRec := c.MakeAuditRecord(model.AuditEventUpdateJobStatus, model.AuditStatusFail)
 	defer c.LogAuditRec(auditRec)
-	audit.AddEventParameter(auditRec, "job_id", c.Params.JobId)
+	model.AddEventParameterToAuditRec(auditRec, "job_id", c.Params.JobId)
 
 	props := model.StringInterfaceFromJSON(r.Body)
 	status, ok := props["status"].(string)

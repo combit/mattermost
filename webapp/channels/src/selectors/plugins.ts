@@ -74,6 +74,14 @@ export const getChannelHeaderMenuPluginComponents = createShallowSelector(
     },
 );
 
+export const getChannelMobileHeaderPluginButtons = createSelector(
+    'getChannelMobileHeaderPluginButtons',
+    (state: GlobalState) => state.plugins.components.MobileChannelHeaderButton,
+    (components = []) => {
+        return components;
+    },
+);
+
 export const getChannelIntroPluginButtons = createSelector(
     'getChannelIntroPluginButtons',
     (state: GlobalState) => state.plugins.components.ChannelIntroButton,
@@ -85,6 +93,22 @@ export const getChannelIntroPluginButtons = createSelector(
 export const getAppBarPluginComponents = createSelector(
     'getAppBarPluginComponents',
     (state: GlobalState) => state.plugins.components.AppBar,
+    (components = []) => {
+        return components;
+    },
+);
+
+export const getSidebarBrowseOrAddChannelMenuPluginComponents = createSelector(
+    'getSidebarBrowseOrAddChannelMenuPluginComponents',
+    (state: GlobalState) => state.plugins.components.SidebarBrowseOrAddChannelMenu,
+    (components = []) => {
+        return components;
+    },
+);
+
+export const getMainMenuPluginComponents = createSelector(
+    'getMainMenuPluginComponents',
+    (state: GlobalState) => state.plugins.components.MainMenu,
     (components = []) => {
         return components;
     },
@@ -142,3 +166,15 @@ export const getSearchButtons = createSelector(
         return components;
     },
 );
+
+/**
+ * Get a plugin's display name by its ID
+ * Falls back to plugin ID if name is not available, then to 'unknown' if no plugin ID
+ */
+export const getPluginDisplayName = (state: GlobalState, pluginId?: string): string => {
+    if (!pluginId) {
+        return 'unknown';
+    }
+    const plugins = state.plugins?.plugins ?? {};
+    return plugins[pluginId]?.name || pluginId;
+};

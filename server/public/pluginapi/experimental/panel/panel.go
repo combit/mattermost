@@ -11,7 +11,7 @@ import (
 )
 
 type Panel interface {
-	Set(userID, settingID string, value interface{}) error
+	Set(userID, settingID string, value any) error
 	Print(userID string)
 	ToPost(userID string) (*model.Post, error)
 	Clear(userID string) error
@@ -57,7 +57,7 @@ func NewSettingsPanel(
 	return panel
 }
 
-func (p *panel) Set(userID, settingID string, value interface{}) error {
+func (p *panel) Set(userID, settingID string, value any) error {
 	s, ok := p.settings[settingID]
 	if !ok {
 		return errors.New("cannot find setting " + settingID)
@@ -84,12 +84,12 @@ func (p *panel) Print(userID string) {
 		p.logger.Errorf("could not clean previous setting post, " + err.Error())
 	}
 
-	sas := []*model.SlackAttachment{}
+	sas := []*model.MessageAttachment{}
 	for _, key := range p.settingKeys {
 		s := p.settings[key]
-		sa, loopErr := s.GetSlackAttachments(userID, p.pluginURL+p.settingHandler, p.isSettingDisabled(userID, s))
+		sa, loopErr := s.GetMessageAttachments(userID, p.pluginURL+p.settingHandler, p.isSettingDisabled(userID, s))
 		if loopErr != nil {
-			p.logger.Errorf("error creating the slack attachment, err=" + loopErr.Error())
+			p.logger.Errorf("error creating the message attachment, err=" + loopErr.Error())
 			continue
 		}
 		sas = append(sas, sa)
@@ -109,18 +109,18 @@ func (p *panel) Print(userID string) {
 func (p *panel) ToPost(userID string) (*model.Post, error) {
 	post := &model.Post{}
 
-	sas := []*model.SlackAttachment{}
+	sas := []*model.MessageAttachment{}
 	for _, key := range p.settingKeys {
 		s := p.settings[key]
-		sa, err := s.GetSlackAttachments(userID, p.pluginURL+p.settingHandler, p.isSettingDisabled(userID, s))
+		sa, err := s.GetMessageAttachments(userID, p.pluginURL+p.settingHandler, p.isSettingDisabled(userID, s))
 		if err != nil {
-			p.logger.Errorf("error creating the slack attachment for setting %s, err=%s", s.GetID(), err.Error())
+			p.logger.Errorf("error creating the message attachment for setting %s, err=%s", s.GetID(), err.Error())
 			continue
 		}
 		sas = append(sas, sa)
 	}
 
-	model.ParseSlackAttachment(post, sas)
+	model.ParseMessageAttachment(post, sas)
 	return post, nil
 }
 

@@ -16,6 +16,7 @@ var SystemManagerDefaultPermissions []string
 var SystemUserManagerDefaultPermissions []string
 var SystemReadOnlyAdminDefaultPermissions []string
 var SystemCustomGroupAdminDefaultPermissions []string
+var SharedChannelManagerDefaultPermissions []string
 
 var BuiltInSchemeManagedRoleIDs []string
 
@@ -26,6 +27,7 @@ func init() {
 		SystemUserManagerRoleId,
 		SystemReadOnlyAdminRoleId,
 		SystemManagerRoleId,
+		SharedChannelManagerRoleId,
 	}
 
 	BuiltInSchemeManagedRoleIDs = append([]string{
@@ -109,7 +111,6 @@ func init() {
 			PermissionGetAnalytics,
 		},
 		PermissionSysconsoleReadReportingTeamStatistics.Id: {
-			PermissionViewTeam,
 			PermissionGetAnalytics,
 		},
 		PermissionSysconsoleWriteUserManagementUsers.Id: {
@@ -120,6 +121,8 @@ func init() {
 		PermissionSysconsoleWriteUserManagementChannels.Id: {
 			PermissionManagePublicChannelProperties,
 			PermissionManagePrivateChannelProperties,
+			PermissionManagePublicChannelAutoTranslation,
+			PermissionManagePrivateChannelAutoTranslation,
 			PermissionManagePrivateChannelMembers,
 			PermissionManagePublicChannelMembers,
 			PermissionDeletePrivateChannel,
@@ -163,11 +166,6 @@ func init() {
 		},
 		PermissionSysconsoleReadComplianceComplianceMonitoring.Id: {
 			PermissionReadAudits,
-		},
-		PermissionSysconsoleWriteExperimentalBleve.Id: {
-			PermissionCreatePostBleveIndexesJob,
-			PermissionPurgeBleveIndexes,
-			PermissionManagePostBleveIndexesJob,
 		},
 		PermissionSysconsoleWriteAuthenticationLdap.Id: {
 			PermissionCreateLdapSyncJob,
@@ -266,7 +264,6 @@ func init() {
 		PermissionSysconsoleReadComplianceCustomTermsOfService.Id,
 		PermissionSysconsoleReadExperimentalFeatures.Id,
 		PermissionSysconsoleReadExperimentalFeatureFlags.Id,
-		PermissionSysconsoleReadExperimentalBleve.Id,
 		PermissionSysconsoleReadProductsBoards.Id,
 	}
 
@@ -359,6 +356,10 @@ func init() {
 		PermissionManageCustomGroupMembers.Id,
 	}
 
+	SharedChannelManagerDefaultPermissions = []string{
+		PermissionManageSharedChannels.Id,
+	}
+
 	// Add the ancillary permissions to each system role
 	SystemUserManagerDefaultPermissions = AddAncillaryPermissions(SystemUserManagerDefaultPermissions)
 	SystemReadOnlyAdminDefaultPermissions = AddAncillaryPermissions(SystemReadOnlyAdminDefaultPermissions)
@@ -380,6 +381,7 @@ const (
 	SystemReadOnlyAdminRoleId    = "system_read_only_admin"
 	SystemManagerRoleId          = "system_manager"
 	SystemCustomGroupAdminRoleId = "system_custom_group_admin"
+	SharedChannelManagerRoleId   = "system_shared_channel_manager"
 
 	TeamGuestRoleId         = "team_guest"
 	TeamUserRoleId          = "team_user"
@@ -423,10 +425,11 @@ type Role struct {
 	Permissions   []string `json:"permissions"`
 	SchemeManaged bool     `json:"scheme_managed"`
 	BuiltIn       bool     `json:"built_in"`
+	SchemeId      *string  `json:"scheme_id"`
 }
 
-func (r *Role) Auditable() map[string]interface{} {
-	return map[string]interface{}{
+func (r *Role) Auditable() map[string]any {
+	return map[string]any{
 		"id":             r.Id,
 		"name":           r.Name,
 		"display_name":   r.DisplayName,
@@ -437,6 +440,7 @@ func (r *Role) Auditable() map[string]interface{} {
 		"permissions":    r.Permissions,
 		"scheme_managed": r.SchemeManaged,
 		"built_in":       r.BuiltIn,
+		"scheme_id":      r.SchemeId,
 	}
 }
 
@@ -457,6 +461,7 @@ func (r *Role) MarshalYAML() (any, error) {
 		Permissions   []string `yaml:"permissions"`
 		SchemeManaged bool     `yaml:"scheme_managed"`
 		BuiltIn       bool     `yaml:"built_in"`
+		SchemeId      *string  `yaml:"scheme_id"`
 	}{
 		Id:            r.Id,
 		Name:          r.Name,
@@ -468,10 +473,11 @@ func (r *Role) MarshalYAML() (any, error) {
 		Permissions:   r.Permissions,
 		SchemeManaged: r.SchemeManaged,
 		BuiltIn:       r.BuiltIn,
+		SchemeId:      r.SchemeId,
 	}, nil
 }
 
-func (r *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (r *Role) UnmarshalYAML(unmarshal func(any) error) error {
 	out := struct {
 		Id            string   `yaml:"id"`
 		Name          string   `yaml:"name"`
@@ -483,6 +489,7 @@ func (r *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		Permissions   []string `yaml:"permissions"`
 		SchemeManaged bool     `yaml:"scheme_managed"`
 		BuiltIn       bool     `yaml:"built_in"`
+		SchemeId      *string  `yaml:"scheme_id"`
 	}{}
 
 	err := unmarshal(&out)
@@ -514,6 +521,7 @@ func (r *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		Permissions:   out.Permissions,
 		SchemeManaged: out.SchemeManaged,
 		BuiltIn:       out.BuiltIn,
+		SchemeId:      out.SchemeId,
 	}
 	return nil
 }
@@ -522,8 +530,8 @@ type RolePatch struct {
 	Permissions *[]string `json:"permissions"`
 }
 
-func (r *RolePatch) Auditable() map[string]interface{} {
-	return map[string]interface{}{
+func (r *RolePatch) Auditable() map[string]any {
+	return map[string]any{
 		"permissions": r.Permissions,
 	}
 }
@@ -915,6 +923,11 @@ func MakeDefaultRoles() map[string]*Role {
 			PermissionEditBookmarkPrivateChannel.Id,
 			PermissionDeleteBookmarkPrivateChannel.Id,
 			PermissionOrderBookmarkPrivateChannel.Id,
+			PermissionManagePublicChannelBanner.Id,
+			PermissionManagePrivateChannelBanner.Id,
+			PermissionManageChannelAccessRules.Id,
+			PermissionManagePublicChannelAutoTranslation.Id,
+			PermissionManagePrivateChannelAutoTranslation.Id,
 		},
 		SchemeManaged: true,
 		BuiltIn:       true,
@@ -982,13 +995,15 @@ func MakeDefaultRoles() map[string]*Role {
 			PermissionManageTeam.Id,
 			PermissionImportTeam.Id,
 			PermissionManageTeamRoles.Id,
+			PermissionManageTeamAccessRules.Id,
 			PermissionManageChannelRoles.Id,
+			PermissionManageOwnIncomingWebhooks.Id,
 			PermissionManageOthersIncomingWebhooks.Id,
+			PermissionManageOwnOutgoingWebhooks.Id,
 			PermissionManageOthersOutgoingWebhooks.Id,
-			PermissionManageSlashCommands.Id,
+			PermissionManageOwnSlashCommands.Id,
 			PermissionManageOthersSlashCommands.Id,
-			PermissionManageIncomingWebhooks.Id,
-			PermissionManageOutgoingWebhooks.Id,
+			PermissionBypassIncomingWebhookChannelLock.Id,
 			PermissionConvertPublicChannelToPrivate.Id,
 			PermissionConvertPrivateChannelToPublic.Id,
 			PermissionDeletePost.Id,
@@ -1001,6 +1016,9 @@ func MakeDefaultRoles() map[string]*Role {
 			PermissionEditBookmarkPrivateChannel.Id,
 			PermissionDeleteBookmarkPrivateChannel.Id,
 			PermissionOrderBookmarkPrivateChannel.Id,
+			PermissionManagePublicChannelBanner.Id,
+			PermissionManagePrivateChannelBanner.Id,
+			PermissionManageChannelAccessRules.Id,
 		},
 		SchemeManaged: true,
 		BuiltIn:       true,
@@ -1091,6 +1109,7 @@ func MakeDefaultRoles() map[string]*Role {
 			PermissionDeleteCustomGroup.Id,
 			PermissionRestoreCustomGroup.Id,
 			PermissionManageCustomGroupMembers.Id,
+			PermissionManageOwnAgent.Id,
 		},
 		SchemeManaged: true,
 		BuiltIn:       true,
@@ -1165,6 +1184,15 @@ func MakeDefaultRoles() map[string]*Role {
 		DisplayName:   "authentication.roles.system_custom_group_admin.name",
 		Description:   "authentication.roles.system_custom_group_admin.description",
 		Permissions:   SystemCustomGroupAdminDefaultPermissions,
+		SchemeManaged: false,
+		BuiltIn:       true,
+	}
+
+	roles[SharedChannelManagerRoleId] = &Role{
+		Name:          SharedChannelManagerRoleId,
+		DisplayName:   "authentication.roles.system_shared_channel_manager.name",
+		Description:   "authentication.roles.system_shared_channel_manager.description",
+		Permissions:   SharedChannelManagerDefaultPermissions,
 		SchemeManaged: false,
 		BuiltIn:       true,
 	}

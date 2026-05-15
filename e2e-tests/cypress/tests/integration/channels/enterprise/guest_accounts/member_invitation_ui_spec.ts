@@ -13,7 +13,7 @@
  * Note: This test requires Enterprise license to be uploaded
  */
 
-import {getRandomId, stubClipboard} from '../../../../utils';
+import {getRandomId, stubClipboard, newTestPassword} from '../../../../utils';
 import {getAdminAccount} from '../../../../support/env';
 import * as TIMEOUTS from '../../../../fixtures/timeouts';
 
@@ -52,7 +52,7 @@ describe('Guest Account - Member Invitation Flow', () => {
         const email = `temp-${getRandomId()}@mattermost.com`;
 
         // # Open team menu and click 'Invite People'
-        cy.uiOpenTeamMenu('Invite People');
+        cy.uiOpenTeamMenu('Invite people');
 
         // * Verify UI Elements in initial step
         cy.findByTestId('invitationModal').within(() => {
@@ -105,8 +105,8 @@ describe('Guest Account - Member Invitation Flow', () => {
         const email = `${username}@mattermost.com`;
         cy.get('#input_email').type(email);
         cy.get('#input_name').type(username);
-        cy.get('#input_password-input').type('Testing123');
-        cy.findByText('Create Account').click();
+        cy.get('#input_password-input').type(newTestPassword());
+        cy.findByText('Create account').click();
 
         // * Verify if user is added to the invited team
         cy.uiGetLHSHeader().findByText(testTeam.display_name);
@@ -136,7 +136,7 @@ describe('Guest Account - Member Invitation Flow', () => {
 
             // # Login as user
             cy.get('#input_loginId').type(testUser.username);
-            cy.get('#input_password-input').type('passwd');
+            cy.get('#input_password-input').type(newTestPassword());
             cy.get('#saveSetting').should('not.be.disabled').click();
 
             // * Verify if user is added to the invited team
@@ -251,7 +251,7 @@ describe('Guest Account - Member Invitation Flow', () => {
 
 function invitePeople(typeText, resultsCount, verifyText, clickInvite = true) {
     // # Open team menu and click 'Invite People'
-    cy.uiOpenTeamMenu('Invite People');
+    cy.uiOpenTeamMenu('Invite people');
 
     // # Search and add a member
     cy.get('.users-emails-input__control').should('be.visible').within(() => {

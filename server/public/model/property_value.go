@@ -6,6 +6,18 @@ package model
 import (
 	"encoding/json"
 	"net/http"
+	"unicode/utf8"
+
+	"github.com/pkg/errors"
+)
+
+const (
+	PropertyValueTargetIDMaxRunes   = 255
+	PropertyValueTargetTypeMaxRunes = 255
+
+	PropertyValueTargetTypePost    = "post"
+	PropertyValueTargetTypeUser    = "user"
+	PropertyValueTargetTypeChannel = "channel"
 )
 
 type PropertyValue struct {
@@ -18,6 +30,8 @@ type PropertyValue struct {
 	CreateAt   int64           `json:"create_at"`
 	UpdateAt   int64           `json:"update_at"`
 	DeleteAt   int64           `json:"delete_at"`
+	CreatedBy  string          `json:"created_by"`
+	UpdatedBy  string          `json:"updated_by"`
 }
 
 func (pv *PropertyValue) PreSave() {
@@ -44,6 +58,14 @@ func (pv *PropertyValue) IsValid() error {
 		return NewAppError("PropertyValue.IsValid", "model.property_value.is_valid.app_error", map[string]any{"FieldName": "target_type", "Reason": "value cannot be empty"}, "id="+pv.ID, http.StatusBadRequest)
 	}
 
+	if utf8.RuneCountInString(pv.TargetType) > PropertyValueTargetTypeMaxRunes {
+		return NewAppError("PropertyValue.IsValid", "model.property_value.is_valid.app_error", map[string]any{"FieldName": "target_type", "Reason": "value exceeds maximum length"}, "id="+pv.ID, http.StatusBadRequest)
+	}
+
+	if utf8.RuneCountInString(pv.TargetID) > PropertyValueTargetIDMaxRunes {
+		return NewAppError("PropertyValue.IsValid", "model.property_value.is_valid.app_error", map[string]any{"FieldName": "target_id", "Reason": "value exceeds maximum length"}, "id="+pv.ID, http.StatusBadRequest)
+	}
+
 	if !IsValidId(pv.GroupID) {
 		return NewAppError("PropertyValue.IsValid", "model.property_value.is_valid.app_error", map[string]any{"FieldName": "group_id", "Reason": "invalid id"}, "id="+pv.ID, http.StatusBadRequest)
 	}
@@ -63,12 +85,53 @@ func (pv *PropertyValue) IsValid() error {
 	return nil
 }
 
+type PropertyValueSearchCursor struct {
+	PropertyValueID string
+	CreateAt        int64
+}
+
+func (p PropertyValueSearchCursor) IsEmpty() bool {
+	return p.PropertyValueID == "" && p.CreateAt == 0
+}
+
+func (p PropertyValueSearchCursor) IsValid() error {
+	if p.IsEmpty() {
+		return nil
+	}
+
+	if p.CreateAt <= 0 {
+		return errors.New("create at cannot be negative or zero")
+	}
+
+	if !IsValidId(p.PropertyValueID) {
+		return errors.New("property field id is invalid")
+	}
+	return nil
+}
+
 type PropertyValueSearchOpts struct {
 	GroupID        string
 	TargetType     string
-	TargetID       string
+	TargetIDs      []string
 	FieldID        string
+	SinceUpdateAt  int64 // UpdateAt after which to send the items
 	IncludeDeleted bool
-	Page           int
+	Cursor         PropertyValueSearchCursor
 	PerPage        int
+	Value          json.RawMessage
+}
+
+// PropertyValueSearch captures the parameters provided by a client for
+// searching property values
+type PropertyValueSearch struct {
+	CursorID       string `json:"cursor_id,omitempty"`
+	CursorCreateAt int64  `json:"cursor_create_at,omitempty"`
+	PerPage        int    `json:"per_page"`
+}
+
+// PropertyValuePatchItem represents a single field value update in a
+// batch PATCH request for property values.
+type PropertyValuePatchItem struct {
+	FieldID string          `json:"field_id"`
+	Value   json.RawMessage `json:"value"`
 }

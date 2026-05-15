@@ -15,7 +15,7 @@ import {getUser} from 'mattermost-redux/selectors/entities/users';
 import {openModal} from 'actions/views/modals';
 
 import PersistNotificationConfirmModal from 'components/persist_notification_confirm_modal';
-import PostPriorityPickerOverlay from 'components/post_priority/post_priority_picker_overlay';
+import PostPriorityPicker from 'components/post_priority/post_priority_picker';
 
 import Constants, {ModalIdentifiers} from 'utils/constants';
 import {hasRequestedPersistentNotifications, mentionsMinusSpecialMentionsInText, specialMentionsInText} from 'utils/post_utils';
@@ -27,9 +27,10 @@ import PriorityLabels from './priority_labels';
 
 const usePriority = (
     draft: PostDraft,
-    handleDraftChange: ((draft: PostDraft, options: {instant?: boolean; show?: boolean}) => void),
+    handleDraftChange: ((draft: PostDraft, options: { instant?: boolean; show?: boolean }) => void),
     focusTextbox: (keepFocus?: boolean) => void,
     shouldShowPreview: boolean,
+    showIndividualCloseButton = true,
 ) => {
     const dispatch = useDispatch();
     const rootId = draft.rootId;
@@ -87,6 +88,7 @@ const usePriority = (
 
         if (settings?.priority || settings?.requested_ack) {
             updatedDraft.metadata = {
+                ...updatedDraft.metadata,
                 priority: {
                     ...settings,
                     priority: settings!.priority || '',
@@ -94,7 +96,10 @@ const usePriority = (
                 },
             };
         } else {
-            updatedDraft.metadata = {};
+            // Remove priority but keep other metadata
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const {priority, ...restMetadata} = updatedDraft.metadata || {};
+            updatedDraft.metadata = restMetadata;
         }
 
         handleDraftChange(updatedDraft, {instant: true});
@@ -137,7 +142,7 @@ const usePriority = (
     const labels = useMemo(() => (
         (hasPrioritySet && !rootId) ? (
             <PriorityLabels
-                canRemove={!shouldShowPreview}
+                canRemove={showIndividualCloseButton && !shouldShowPreview}
                 hasError={!isValidPersistentNotifications}
                 specialMentions={specialMentions}
                 onRemove={handleRemovePriority}
@@ -146,11 +151,11 @@ const usePriority = (
                 requestedAck={draft!.metadata!.priority?.requested_ack}
             />
         ) : undefined
-    ), [hasPrioritySet, rootId, shouldShowPreview, isValidPersistentNotifications, specialMentions, handleRemovePriority, draft]);
+    ), [hasPrioritySet, rootId, showIndividualCloseButton, shouldShowPreview, isValidPersistentNotifications, specialMentions, handleRemovePriority, draft]);
 
     const additionalControl = useMemo(() =>
         !rootId && isPostPriorityEnabled && (
-            <PostPriorityPickerOverlay
+            <PostPriorityPicker
                 key='post-priority-picker-key'
                 settings={draft.metadata?.priority}
                 onApply={handlePostPriorityApply}
@@ -164,6 +169,7 @@ const usePriority = (
         additionalControl,
         isValidPersistentNotifications,
         onSubmitCheck,
+        handleRemovePriority,
     };
 };
 

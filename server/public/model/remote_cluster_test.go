@@ -132,38 +132,112 @@ func TestRemoteClusterInviteEncryption(t *testing.T) {
 		badDecrypt bool
 		password   string
 		invite     RemoteClusterInvite
+		skipFIPS   bool
 	}{
-		{name: "empty password", badDecrypt: false, password: "", invite: makeInvite("https://example.com:8065")},
+		{name: "empty password", badDecrypt: false, password: "", invite: makeInvite("https://example.com:8065"), skipFIPS: true},
 		{name: "good password", badDecrypt: false, password: "Ultra secret password!", invite: makeInvite("https://example.com:8065")},
 		{name: "bad decrypt", badDecrypt: true, password: "correct horse battery staple", invite: makeInvite("https://example.com:8065")},
 	}
 
 	for _, tt := range testData {
-		encrypted, err := tt.invite.Encrypt(tt.password)
-		require.NoError(t, err)
-
-		invite := RemoteClusterInvite{}
-		if tt.badDecrypt {
-			buf := make([]byte, len(encrypted))
-			_, err = io.ReadFull(rand.Reader, buf)
-			assert.NoError(t, err)
-
-			err = invite.Decrypt(buf, tt.password)
-			require.Error(t, err)
-		} else {
-			err = invite.Decrypt(encrypted, tt.password)
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipFIPS && FIPSEnabled {
+				t.Skip("skipping under FIPS: encryption requires keys >= 14 bytes")
+			}
+			encrypted, err := tt.invite.Encrypt(tt.password)
 			require.NoError(t, err)
-			assert.Equal(t, tt.invite, invite)
-		}
+
+			invite := RemoteClusterInvite{}
+			if tt.badDecrypt {
+				buf := make([]byte, len(encrypted))
+				_, err = io.ReadFull(rand.Reader, buf)
+				assert.NoError(t, err)
+
+				err = invite.Decrypt(buf, tt.password)
+				require.Error(t, err)
+			} else {
+				err = invite.Decrypt(encrypted, tt.password)
+				require.NoError(t, err)
+				assert.Equal(t, tt.invite, invite)
+			}
+		})
 	}
+}
+
+func TestRemoteClusterInviteBackwardCompatibility(t *testing.T) {
+	// Test that we can decrypt invites created with the old scrypt method
+	oldInvite := RemoteClusterInvite{
+		RemoteId:       NewId(),
+		SiteURL:        "https://example.com:8065",
+		Token:          NewId(),
+		RefreshedToken: NewId(),
+		Version:        2, // Old version using scrypt
+	}
+
+	password := NewTestPassword()
+
+	// Encrypt with old method (scrypt)
+	encrypted, err := oldInvite.Encrypt(password)
+	require.NoError(t, err)
+
+	// Decrypt should work with backward compatibility
+	decryptedInvite := RemoteClusterInvite{}
+	err = decryptedInvite.Decrypt(encrypted, password)
+	require.NoError(t, err)
+	assert.Equal(t, oldInvite, decryptedInvite)
+
+	// Test new version (PBKDF2)
+	newInvite := RemoteClusterInvite{
+		RemoteId:       NewId(),
+		SiteURL:        "https://example.com:8065",
+		Token:          NewId(),
+		RefreshedToken: NewId(),
+		Version:        3, // New version using PBKDF2
+	}
+
+	// Encrypt with new method (PBKDF2)
+	encrypted, err = newInvite.Encrypt(password)
+	require.NoError(t, err)
+
+	// Decrypt should work
+	decryptedInvite = RemoteClusterInvite{}
+	err = decryptedInvite.Decrypt(encrypted, password)
+	require.NoError(t, err)
+	assert.Equal(t, newInvite, decryptedInvite)
 }
 
 func makeInvite(url string) RemoteClusterInvite {
 	return RemoteClusterInvite{
-		RemoteId: NewId(),
-		SiteURL:  url,
-		Token:    NewId(),
+		RemoteId:       NewId(),
+		SiteURL:        url,
+		Token:          NewId(),
+		RefreshedToken: NewId(),
+		Version:        3,
 	}
+}
+
+func TestRemoteClusterToRemoteClusterInfo(t *testing.T) {
+	remoteID := NewId()
+	now := GetMillis()
+	rc := &RemoteCluster{
+		RemoteId:    remoteID,
+		Name:        "test-name",
+		DisplayName: "Test Display Name",
+		CreateAt:    now,
+		DeleteAt:    0,
+		LastPingAt:  now,
+		SiteURL:     "https://example.com:8065",
+	}
+
+	info := rc.ToRemoteClusterInfo()
+
+	assert.Equal(t, remoteID, info.RemoteId, "RemoteId should be set")
+	assert.Equal(t, rc.Name, info.Name)
+	assert.Equal(t, rc.DisplayName, info.DisplayName)
+	assert.Equal(t, rc.CreateAt, info.CreateAt)
+	assert.Equal(t, rc.DeleteAt, info.DeleteAt)
+	assert.Equal(t, rc.LastPingAt, info.LastPingAt)
+	assert.Equal(t, rc.SiteURL, info.SiteURL)
 }
 
 func TestNewIDFromBytes(t *testing.T) {

@@ -11,8 +11,8 @@
 // Group: @channels @autocomplete
 
 import * as TIMEOUTS from '../../../fixtures/timeouts';
-
 import {withTimestamp, createEmail} from '../enterprise/elasticsearch_autocomplete/helpers';
+import {newTestPassword} from '../../../utils';
 
 describe('Autocomplete without Elasticsearch - Renaming', () => {
     const timestamp = Date.now();
@@ -34,7 +34,7 @@ describe('Autocomplete without Elasticsearch - Renaming', () => {
     it('renamed user appears in message input box', () => {
         const spiderman = {
             username: withTimestamp('spiderman', timestamp),
-            password: 'passwd',
+            password: newTestPassword(),
             first_name: 'Peter',
             last_name: 'Parker',
             email: createEmail('spiderman', timestamp),
@@ -88,7 +88,7 @@ describe('Autocomplete without Elasticsearch - Renaming', () => {
         before(() => {
             const punisher = {
                 username: withTimestamp('punisher', timestamp),
-                password: 'passwd',
+                password: newTestPassword(),
                 first_name: 'Frank',
                 last_name: 'Castle',
                 email: createEmail('punisher', timestamp),

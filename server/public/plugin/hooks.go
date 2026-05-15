@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	saml2 "github.com/mattermost/gosaml2"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -61,6 +62,12 @@ const (
 	OnSharedChannelsAttachmentSyncMsgID       = 43
 	OnSharedChannelsProfileImageSyncMsgID     = 44
 	GenerateSupportDataID                     = 45
+	OnSAMLLoginID                             = 46
+	EmailNotificationWillBeSentID             = 47
+	FileWillBeDownloadedID                    = 48
+	ChannelMemberWillBeAddedID                = 49
+	TeamMemberWillBeAddedID                   = 50
+	ChannelWillBeArchivedID                   = 51
 	TotalHooksID                              = iota
 )
 
@@ -199,6 +206,25 @@ type Hooks interface {
 	// Minimum server version: 5.2
 	ChannelHasBeenCreated(c *Context, channel *model.Channel)
 
+	// ChannelWillBeArchived is invoked before a channel is archived, allowing plugins to
+	// reject the archive operation.
+	//
+	// To reject the archive, return a non-empty string describing why it was rejected.
+	// To allow the archive, return an empty string.
+	//
+	// Minimum server version: 11.7
+	ChannelWillBeArchived(c *Context, channel *model.Channel) string
+
+	// ChannelMemberWillBeAdded is invoked before a member is added to a channel, allowing
+	// plugins to modify the channel member or reject the addition.
+	//
+	// To reject the addition, return a non-empty string describing why it was rejected.
+	// To modify the member, return the replacement, non-nil *model.ChannelMember and an empty string.
+	// To allow the addition without modification, return a nil *model.ChannelMember and an empty string.
+	//
+	// Minimum server version: 11.7
+	ChannelMemberWillBeAdded(c *Context, channelMember *model.ChannelMember) (*model.ChannelMember, string)
+
 	// UserHasJoinedChannel is invoked after the membership has been committed to the database.
 	// If actor is not nil, the user was invited to the channel by the actor.
 	//
@@ -210,6 +236,16 @@ type Hooks interface {
 	//
 	// Minimum server version: 5.2
 	UserHasLeftChannel(c *Context, channelMember *model.ChannelMember, actor *model.User)
+
+	// TeamMemberWillBeAdded is invoked before a member is added to a team, allowing
+	// plugins to modify the team member or reject the addition.
+	//
+	// To reject the addition, return a non-empty string describing why it was rejected.
+	// To modify the member, return the replacement, non-nil *model.TeamMember and an empty string.
+	// To allow the addition without modification, return a nil *model.TeamMember and an empty string.
+	//
+	// Minimum server version: 11.7
+	TeamMemberWillBeAdded(c *Context, teamMember *model.TeamMember) (*model.TeamMember, string)
 
 	// UserHasJoinedTeam is invoked after the membership has been committed to the database.
 	// If actor is not nil, the user was added to the team by the actor.
@@ -235,6 +271,20 @@ type Hooks interface {
 	//
 	// Minimum server version: 5.2
 	FileWillBeUploaded(c *Context, info *model.FileInfo, file io.Reader, output io.Writer) (*model.FileInfo, string)
+
+	// FileWillBeDownloaded is invoked when a file is requested for download, but before it is sent to the client.
+	//
+	// To reject a file download, return an non-empty string describing why the file was rejected.
+	// To allow the download, return an empty string.
+	//
+	// The downloadType parameter indicates the type of file access and can be one of:
+	//   - model.FileDownloadTypeFile: Full file download
+	//   - model.FileDownloadTypeThumbnail: Thumbnail request
+	//   - model.FileDownloadTypePreview: Preview image request
+	//   - model.FileDownloadTypePublic: Public link access (userID will be empty string in this case)
+	//
+	// Minimum server version: 11.5
+	FileWillBeDownloaded(c *Context, fileInfo *model.FileInfo, userID string, downloadType model.FileDownloadType) string
 
 	// ReactionHasBeenAdded is invoked after the reaction has been committed to the database.
 	//
@@ -311,6 +361,21 @@ type Hooks interface {
 	// config object can be returned to be stored in place of the provided one.
 	// Minimum server version: 8.0
 	ConfigurationWillBeSaved(newCfg *model.Config) (*model.Config, error)
+
+	// EmailNotificationWillBeSent is invoked before an email notification is sent to a user.
+	// This allows plugins to customize the email notification content including subject,
+	// title, subtitle, message content, buttons, and other email properties.
+	//
+	// To reject an email notification, return an non-empty string describing why the notification was rejected.
+	// To modify the notification, return the replacement, non-nil *model.EmailNotificationContent and an empty string.
+	// To allow the notification without modification, return a nil *model.EmailNotificationContent and an empty string.
+	//
+	// Note that core identifiers (PostId, ChannelId, TeamId, SenderId, RecipientId, RootId) and
+	// context fields (ChannelType, IsDirectMessage, etc.) are immutable and changes to them will be ignored.
+	// Only customizable content fields can be modified.
+	//
+	// Minimum server version: 11.00
+	EmailNotificationWillBeSent(emailNotification *model.EmailNotification) (*model.EmailNotificationContent, string)
 
 	// NotificationWillBePushed is invoked before a push notification is sent to the push
 	// notification server.
@@ -395,4 +460,9 @@ type Hooks interface {
 	//
 	// Minimum server version: 9.8
 	GenerateSupportData(c *Context) ([]*model.FileData, error)
+
+	// OnSAMLLogin is invoked after a successful SAML login.
+	//
+	// Minimum server version: 10.7
+	OnSAMLLogin(c *Context, user *model.User, assertion *saml2.AssertionInfo) error
 }

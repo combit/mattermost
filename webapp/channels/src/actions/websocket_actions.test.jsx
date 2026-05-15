@@ -1,9 +1,14 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {CloudTypes} from 'mattermost-redux/action_types';
+import cloneDeep from 'lodash/cloneDeep';
+
+import {WebSocketEvents} from '@mattermost/client';
+
+import {ChannelTypes, CloudTypes} from 'mattermost-redux/action_types';
 import {fetchMyCategories} from 'mattermost-redux/actions/channel_categories';
 import {fetchAllMyTeamsChannels} from 'mattermost-redux/actions/channels';
+import {getCustomProfileAttributeFields} from 'mattermost-redux/actions/general';
 import {getGroup} from 'mattermost-redux/actions/groups';
 import {
     getPostThreads,
@@ -11,7 +16,8 @@ import {
 } from 'mattermost-redux/actions/posts';
 import {batchFetchStatusesProfilesGroupsFromPosts} from 'mattermost-redux/actions/status_profile_polling';
 import {getUser} from 'mattermost-redux/actions/users';
-import {getStatusForUserId} from 'mattermost-redux/selectors/entities/users';
+import {getCustomProfileAttributes} from 'mattermost-redux/selectors/entities/general';
+import {getStatusForUserId, getUser as stateUser} from 'mattermost-redux/selectors/entities/users';
 
 import {handleNewPost} from 'actions/post_actions';
 import {syncPostsInChannel} from 'actions/views/channel';
@@ -19,13 +25,16 @@ import {closeRightHandSide} from 'actions/views/rhs';
 import realConfigureStore from 'store';
 import store from 'stores/redux_store';
 
+import {invalidateAccessControlAttributesCache} from 'components/common/hooks/useAccessControlAttributes';
+
 import mergeObjects from 'packages/mattermost-redux/test/merge_objects';
 import configureStore from 'tests/test_store';
 import {getHistory} from 'utils/browser_history';
-import Constants, {SocketEvents, ActionTypes, UserStatuses} from 'utils/constants';
+import Constants, {ActionTypes, UserStatuses} from 'utils/constants';
 
 import {
     handleChannelUpdatedEvent,
+    handleChannelAccessControlUpdatedEvent,
     handleEvent,
     handleNewPostEvent,
     handleNewPostEvents,
@@ -41,6 +50,10 @@ import {
     handleCloudSubscriptionChanged,
     handleGroupAddedMemberEvent,
     handleStatusChangedEvent,
+    handleCustomAttributeValuesUpdated,
+    handleCustomAttributesCreated,
+    handleCustomAttributesUpdated,
+    handleCustomAttributesDeleted,
 } from './websocket_actions';
 
 jest.mock('mattermost-redux/actions/posts', () => ({
@@ -57,6 +70,11 @@ jest.mock('mattermost-redux/actions/channel_categories', () => ({
 jest.mock('mattermost-redux/actions/status_profile_polling', () => ({
     ...jest.requireActual('mattermost-redux/actions/status_profile_polling'),
     batchFetchStatusesProfilesGroupsFromPosts: jest.fn(() => ({type: ''})),
+}));
+
+jest.mock('mattermost-redux/actions/general', () => ({
+    ...jest.requireActual('mattermost-redux/actions/general'),
+    getCustomProfileAttributeFields: jest.fn(() => ({type: 'CUSTOM_PROFILE_ATTRIBUTE_FIELDS_RECEIVED'})),
 }));
 
 jest.mock('mattermost-redux/actions/groups', () => ({
@@ -99,6 +117,11 @@ jest.mock('actions/views/channel', () => ({
 jest.mock('plugins', () => ({
     ...jest.requireActual('plugins'),
     loadPluginsIfNecessary: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('components/common/hooks/useAccessControlAttributes', () => ({
+    EntityType: {Channel: 'channel'},
+    invalidateAccessControlAttributesCache: jest.fn(),
 }));
 
 let mockState = {
@@ -219,7 +242,7 @@ jest.mock('actions/views/rhs', () => ({
 
 describe('handleEvent', () => {
     test('should dispatch channel updated event properly', () => {
-        const msg = {event: SocketEvents.CHANNEL_UPDATED};
+        const msg = {event: WebSocketEvents.ChannelUpdated};
 
         handleEvent(msg);
 
@@ -259,8 +282,34 @@ describe('handleGroupAddedMemberEvent', () => {
 
         testStore.dispatch(handleGroupAddedMemberEvent(msg));
         expect(store.dispatch).toHaveBeenCalledWith({
-            type: 'ADD_MY_GROUP',
-            id: 'group-1',
+            meta: {batch: true},
+            payload: [
+                {
+                    type: 'ADD_MY_GROUP',
+                    id: 'group-1',
+                },
+                {
+                    data: {
+                        create_at: 1691178673417,
+                        delete_at: 0,
+                        group_id: 'group-1',
+                        user_id: 'currentUserId',
+                    },
+                    id: 'group-1',
+                    type: 'RECEIVED_MEMBER_TO_ADD_TO_GROUP',
+                },
+                {
+                    data: [{
+                        create_at: 1691178673417,
+                        delete_at: 0,
+                        group_id: 'group-1',
+                        user_id: 'currentUserId',
+                    }],
+                    id: 'group-1',
+                    type: 'RECEIVED_PROFILES_FOR_GROUP',
+                },
+            ],
+            type: 'BATCHING_REDUCER.BATCH',
         });
     });
 
@@ -664,11 +713,69 @@ describe('reconnect', () => {
         reconnect();
         expect(fetchAllMyTeamsChannels).toHaveBeenCalled();
     });
+
+    test('should reload custom profile attribute fields on reconnect', () => {
+        const clonedMockState = cloneDeep(mockState);
+
+        mockState = mergeObjects(
+            mockState,
+            {
+                entities: {
+                    general: {
+                        license: {
+                            SkuShortName: 'enterprise',
+                        },
+                        config: {
+                            FeatureFlagCustomProfileAttributes: 'true',
+                        },
+                    },
+                },
+            },
+        );
+
+        reconnect();
+        expect(getCustomProfileAttributeFields).toHaveBeenCalled();
+
+        // Restore mock state
+        mockState = clonedMockState;
+    });
+
+    test.each([
+        {SkuShortName: 'starter', FeatureFlagCustomProfileAttributes: 'true'},
+        {SkuShortName: 'enterprise', FeatureFlagCustomProfileAttributes: 'false'},
+    ])("should not reload custom profile attribute fields on reconnect if feature isn't available", ({SkuShortName, FeatureFlagCustomProfileAttributes}) => {
+        const clonedMockState = cloneDeep(mockState);
+
+        mockState = mergeObjects(
+            mockState,
+            {
+                entities: {
+                    general: {
+                        license: {
+                            SkuShortName,
+                        },
+                        config: {
+                            FeatureFlagCustomProfileAttributes,
+                        },
+                    },
+                },
+            },
+        );
+
+        reconnect();
+        expect(getCustomProfileAttributeFields).not.toHaveBeenCalled();
+
+        // Restore mock state
+        mockState = clonedMockState;
+    });
 });
 
 describe('handleChannelUpdatedEvent', () => {
     const initialState = {
         entities: {
+            general: {
+                config: {},
+            },
             channels: {
                 currentChannelId: 'channel',
                 channels: {
@@ -676,6 +783,7 @@ describe('handleChannelUpdatedEvent', () => {
                         id: 'channel',
                     },
                 },
+                myMembers: {},
             },
             teams: {
                 currentTeamId: 'team',
@@ -774,6 +882,47 @@ describe('handleChannelUpdatedEvent', () => {
     });
 });
 
+describe('handleChannelAccessControlUpdatedEvent', () => {
+    beforeEach(() => {
+        invalidateAccessControlAttributesCache.mockClear();
+    });
+
+    test('dispatches RECEIVED_CHANNEL with parsed channel and invalidates attribute cache', () => {
+        const testStore = configureStore({});
+        const channel = {
+            id: 'channel-ac-1',
+            team_id: 'team-1',
+            policy_enforced: true,
+        };
+        const msg = {
+            data: {
+                channel: JSON.stringify(channel),
+            },
+        };
+
+        testStore.dispatch(handleChannelAccessControlUpdatedEvent(msg));
+
+        expect(testStore.getActions()).toEqual([
+            {
+                type: ChannelTypes.RECEIVED_CHANNEL,
+                data: channel,
+            },
+        ]);
+        expect(invalidateAccessControlAttributesCache).toHaveBeenCalledTimes(1);
+        expect(invalidateAccessControlAttributesCache).toHaveBeenCalledWith('channel', 'channel-ac-1');
+    });
+
+    test('returns early when msg.data.channel is missing', () => {
+        const testStore = configureStore({});
+        const msg = {data: {}};
+
+        testStore.dispatch(handleChannelAccessControlUpdatedEvent(msg));
+
+        expect(testStore.getActions()).toEqual([]);
+        expect(invalidateAccessControlAttributesCache).not.toHaveBeenCalled();
+    });
+});
+
 describe('handleCloudSubscriptionChanged', () => {
     const baseSubscription = {
         id: 'basesub',
@@ -819,7 +968,7 @@ describe('handleCloudSubscriptionChanged', () => {
             id: 'newsub',
         };
         const msg = {
-            event: SocketEvents.CLOUD_PRODUCT_LIMITS_CHANGED,
+            event: WebSocketEvents.CloudSubscriptionChanged,
             data: {
                 limits: newLimits,
                 subscription: newSubscription,
@@ -858,7 +1007,7 @@ describe('handleCloudSubscriptionChanged', () => {
             },
         };
         const msg = {
-            event: SocketEvents.CLOUD_PRODUCT_LIMITS_CHANGED,
+            event: WebSocketEvents.CloudSubscriptionChanged,
             data: {
                 limits: newLimits,
             },
@@ -892,7 +1041,7 @@ describe('handleCloudSubscriptionChanged', () => {
         };
 
         const msg = {
-            event: SocketEvents.CLOUD_PRODUCT_LIMITS_CHANGED,
+            event: WebSocketEvents.CloudSubscriptionChanged,
             data: {
                 subscription: newSubscription,
             },
@@ -909,14 +1058,12 @@ describe('handleCloudSubscriptionChanged', () => {
 });
 
 describe('handlePluginEnabled/handlePluginDisabled', () => {
-    const origLog = console.log;
     const origError = console.error;
     const origCreateElement = document.createElement;
     const origGetElementsByTagName = document.getElementsByTagName;
     const origWindowPlugins = window.plugins;
 
     afterEach(() => {
-        console.log = origLog;
         console.error = origError;
         document.createElement = origCreateElement;
         document.getElementsByTagName = origGetElementsByTagName;
@@ -942,8 +1089,7 @@ describe('handlePluginEnabled/handlePluginDisabled', () => {
         };
 
         beforeEach(async () => {
-            console.log = jest.fn();
-            console.error = jest.fn();
+            console.error = jest.fn((...args) => origError(...args));
 
             document.createElement = jest.fn();
             document.getElementsByTagName = jest.fn();
@@ -952,59 +1098,35 @@ describe('handlePluginEnabled/handlePluginDisabled', () => {
             }]);
         });
 
-        test('when a plugin is enabled', () => {
+        test('when a plugin is enabled', async () => {
             const manifest = {
                 ...baseManifest,
                 id: 'com.mattermost.demo-plugin',
-            };
-            const initialize = jest.fn();
-            window.plugins = {
-                [manifest.id]: {
-                    initialize,
-                },
             };
 
             const mockScript = {};
             document.createElement.mockReturnValue(mockScript);
 
-            expect(mockScript.onload).toBeUndefined();
             handlePluginEnabled({data: {manifest}});
 
             expect(document.createElement).toHaveBeenCalledWith('script');
             expect(document.getElementsByTagName).toHaveBeenCalledTimes(1);
             expect(document.getElementsByTagName()[0].appendChild).toHaveBeenCalledTimes(1);
-            expect(mockScript.onload).toBeInstanceOf(Function);
 
-            // Pretend to be a browser, invoke onload
-            mockScript.onload();
-            expect(initialize).toHaveBeenCalledWith(expect.anything(), store);
-            const registery = initialize.mock.calls[0][0];
-            const mockComponent = 'mockRootComponent';
-            registery.registerRootComponent(mockComponent);
+            expect(store.dispatch).toHaveBeenCalledTimes(1);
 
             let dispatchArg = store.dispatch.mock.calls[0][0];
             expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_WEBAPP_PLUGIN);
             expect(dispatchArg.data).toBe(manifest);
 
-            dispatchArg = store.dispatch.mock.calls[1][0];
-
-            expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_PLUGIN_COMPONENT);
-            expect(dispatchArg.name).toBe('Root');
-            expect(dispatchArg.data.component).toBe(mockComponent);
-            expect(dispatchArg.data.pluginId).toBe(manifest.id);
+            // Assert handlePluginEnabled is idempotent
+            handlePluginEnabled({data: {manifest}});
 
             expect(store.dispatch).toHaveBeenCalledTimes(2);
 
-            // Assert handlePluginEnabled is idempotent
-            mockScript.onload = undefined;
-            handlePluginEnabled({data: {manifest}});
-            expect(mockScript.onload).toBeUndefined();
-
-            dispatchArg = store.dispatch.mock.calls[2][0];
+            dispatchArg = store.dispatch.mock.calls[1][0];
             expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_WEBAPP_PLUGIN);
             expect(dispatchArg.data).toBe(manifest);
-
-            expect(store.dispatch).toHaveBeenCalledTimes(3);
 
             expect(console.error).toHaveBeenCalledTimes(0);
         });
@@ -1013,12 +1135,6 @@ describe('handlePluginEnabled/handlePluginDisabled', () => {
             const manifest = {
                 ...baseManifest,
                 id: 'com.mattermost.demo-2-plugin',
-            };
-            const initialize = jest.fn();
-            window.plugins = {
-                [manifest.id]: {
-                    initialize,
-                },
             };
 
             const manifestv2 = {
@@ -1032,69 +1148,39 @@ describe('handlePluginEnabled/handlePluginDisabled', () => {
             const mockScript = {};
             document.createElement.mockReturnValue(mockScript);
 
-            expect(mockScript.onload).toBeUndefined();
             handlePluginEnabled({data: {manifest}});
 
             expect(document.createElement).toHaveBeenCalledWith('script');
             expect(document.getElementsByTagName).toHaveBeenCalledTimes(1);
             expect(document.getElementsByTagName()[0].appendChild).toHaveBeenCalledTimes(1);
-            expect(mockScript.onload).toBeInstanceOf(Function);
-
-            // Pretend to be a browser, invoke onload
-            mockScript.onload();
-            expect(initialize).toHaveBeenCalledWith(expect.anything(), store);
-            const registry = initialize.mock.calls[0][0];
-            const mockComponent = 'mockRootComponent';
-            registry.registerRootComponent(mockComponent);
 
             let dispatchArg = store.dispatch.mock.calls[0][0];
             expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_WEBAPP_PLUGIN);
             expect(dispatchArg.data).toBe(manifest);
 
-            dispatchArg = store.dispatch.mock.calls[1][0];
-            expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_PLUGIN_COMPONENT);
-            expect(dispatchArg.name).toBe('Root');
-            expect(dispatchArg.data.component).toBe(mockComponent);
-            expect(dispatchArg.data.pluginId).toBe(manifest.id);
-
             // Upgrade plugin
-            mockScript.onload = undefined;
             handlePluginEnabled({data: {manifest: manifestv2}});
 
             // Assert upgrade is idempotent
             handlePluginEnabled({data: {manifest: manifestv2}});
 
-            expect(mockScript.onload).toBeInstanceOf(Function);
             expect(document.createElement).toHaveBeenCalledTimes(2);
 
-            mockScript.onload();
-            expect(initialize).toHaveBeenCalledWith(expect.anything(), store);
-            expect(initialize).toHaveBeenCalledTimes(2);
-            const registry2 = initialize.mock.calls[0][0];
-            const mockComponent2 = 'mockRootComponent2';
-            registry2.registerRootComponent(mockComponent2);
+            dispatchArg = store.dispatch.mock.calls[1][0];
+            expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_WEBAPP_PLUGIN);
+            expect(dispatchArg.data).toBe(manifestv2);
 
-            dispatchArg = store.dispatch.mock.calls[2][0];
+            expect(store.dispatch).toHaveBeenCalledTimes(4);
+            const dispatchRemovedArg = store.dispatch.mock.calls[2][0];
+            expect(typeof dispatchRemovedArg).toBe('function');
+            dispatchRemovedArg(store.dispatch);
+
+            dispatchArg = store.dispatch.mock.calls[3][0];
             expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_WEBAPP_PLUGIN);
             expect(dispatchArg.data).toBe(manifestv2);
 
             expect(store.dispatch).toHaveBeenCalledTimes(6);
-            const dispatchRemovedArg = store.dispatch.mock.calls[3][0];
-            expect(typeof dispatchRemovedArg).toBe('function');
-            dispatchRemovedArg(store.dispatch);
-
-            dispatchArg = store.dispatch.mock.calls[4][0];
-            expect(dispatchArg.type).toBe(ActionTypes.RECEIVED_WEBAPP_PLUGIN);
-            expect(dispatchArg.data).toBe(manifestv2);
-
-            const dispatchReceivedArg2 = store.dispatch.mock.calls[5][0];
-            expect(dispatchReceivedArg2.type).toBe(ActionTypes.RECEIVED_PLUGIN_COMPONENT);
-            expect(dispatchReceivedArg2.name).toBe('Root');
-            expect(dispatchReceivedArg2.data.component).toBe(mockComponent2);
-            expect(dispatchReceivedArg2.data.pluginId).toBe(manifest.id);
-
-            expect(store.dispatch).toHaveBeenCalledTimes(8);
-            const dispatchReceivedArg4 = store.dispatch.mock.calls[7][0];
+            const dispatchReceivedArg4 = store.dispatch.mock.calls[5][0];
 
             expect(dispatchReceivedArg4.type).toBe(ActionTypes.REMOVED_WEBAPP_PLUGIN);
             expect(dispatchReceivedArg4.data).toBe(manifestv2);
@@ -1122,7 +1208,6 @@ describe('handlePluginEnabled/handlePluginDisabled', () => {
         };
 
         beforeEach(async () => {
-            console.log = jest.fn();
             console.error = jest.fn();
 
             document.createElement = jest.fn();
@@ -1252,7 +1337,7 @@ describe('handleStatusChangedEvent', () => {
         expect(getStatusForUserId(testStore.getState(), currentUserId)).toBe(UserStatuses.ONLINE);
 
         testStore.dispatch(handleStatusChangedEvent({
-            event: SocketEvents.STATUS_CHANGED,
+            event: WebSocketEvents.StatusChange,
             data: {
                 user_id: currentUserId,
                 status: UserStatuses.AWAY,
@@ -1262,7 +1347,7 @@ describe('handleStatusChangedEvent', () => {
         expect(getStatusForUserId(testStore.getState(), currentUserId)).toBe(UserStatuses.AWAY);
 
         testStore.dispatch(handleStatusChangedEvent({
-            event: SocketEvents.STATUS_CHANGED,
+            event: WebSocketEvents.StatusChange,
             data: {
                 user_id: currentUserId,
                 status: UserStatuses.ONLINE,
@@ -1272,7 +1357,7 @@ describe('handleStatusChangedEvent', () => {
         expect(getStatusForUserId(testStore.getState(), currentUserId)).toBe(UserStatuses.ONLINE);
 
         testStore.dispatch(handleStatusChangedEvent({
-            event: SocketEvents.STATUS_CHANGED,
+            event: WebSocketEvents.StatusChange,
             data: {
                 user_id: currentUserId,
                 status: UserStatuses.OFFLINE,
@@ -1280,5 +1365,320 @@ describe('handleStatusChangedEvent', () => {
         }));
 
         expect(getStatusForUserId(testStore.getState(), currentUserId)).toBe(UserStatuses.OFFLINE);
+    });
+});
+
+describe('handleCustomAttributeValuesUpdated', () => {
+    const currentUserId = 'user1';
+
+    function makeInitialState() {
+        return {
+            entities: {
+                users: {
+                    profiles: {
+                        user1: {id: currentUserId},
+                    },
+                },
+            },
+        };
+    }
+
+    test('should add the CustomAttributeValues to the user', () => {
+        const testStore = realConfigureStore(makeInitialState());
+
+        expect(stateUser(testStore.getState(), currentUserId)).toEqual({id: currentUserId});
+
+        testStore.dispatch(handleCustomAttributeValuesUpdated({
+            event: WebSocketEvents.CPAValuesUpdated,
+            data: {
+                user_id: currentUserId,
+                values: {field1: 'value1', field2: 'value2'},
+            },
+        }));
+
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes).toBeTruthy();
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes.field1).toEqual('value1');
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes.field2).toEqual('value2');
+
+        // update one field, add new field
+        testStore.dispatch(handleCustomAttributeValuesUpdated({
+            event: WebSocketEvents.CPAValuesUpdated,
+            data: {
+                user_id: currentUserId,
+                values: {field1: 'valueChanged', field3: 'new field'},
+            },
+        }));
+
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes).toBeTruthy();
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes.field1).toEqual('valueChanged');
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes.field2).toEqual('value2');
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes.field3).toEqual('new field');
+    });
+
+    test('should ignore the CustomAttributeValues if no user', () => {
+        const testStore = realConfigureStore(makeInitialState());
+
+        expect(stateUser(testStore.getState(), currentUserId)).toEqual({id: currentUserId});
+
+        testStore.dispatch(handleCustomAttributeValuesUpdated({
+            event: WebSocketEvents.CPAValuesUpdated,
+            data: {
+                user_id: 'nonExistantUser',
+                values: {field1: 'value1', field2: 'value2'},
+            },
+        }));
+
+        expect(stateUser(testStore.getState(), 'nonExistintUser')).toBeFalsy();
+        expect(stateUser(testStore.getState(), currentUserId)).toBeTruthy();
+        expect(stateUser(testStore.getState(), currentUserId).custom_profile_attributes).toBeFalsy();
+    });
+});
+
+describe('handleCustomAttributeCRUD', () => {
+    const field1 = {id: 'field1', groupid: 'group1', name: 'FIELD ONE', type: 'text'};
+    const field2 = {id: 'field2', groupid: 'group1', name: 'FIELD TWO', type: 'text'};
+
+    function makeInitialState() {
+        return {
+            entities: {
+                general: {
+                },
+            },
+        };
+    }
+
+    test('should add the CustomAttributeField to the state', () => {
+        const testStore = realConfigureStore(makeInitialState());
+
+        testStore.dispatch(handleCustomAttributesCreated({
+            event: WebSocketEvents.CPAFieldCreated,
+            data: {
+                field: field1,
+            },
+        }));
+
+        let cpaFields = getCustomProfileAttributes(testStore.getState());
+        expect(cpaFields).toBeTruthy();
+        expect(cpaFields.length).toEqual(1);
+        expect(cpaFields.filter(({id}) => id === field1.id)[0].type).toEqual(field1.type);
+        expect(cpaFields.filter(({id}) => id === field1.id)[0].name).toEqual(field1.name);
+
+        // create second field
+        testStore.dispatch(handleCustomAttributesCreated({
+            event: WebSocketEvents.CPAFieldCreated,
+            data: {
+                field: field2,
+            },
+        }));
+
+        cpaFields = getCustomProfileAttributes(testStore.getState());
+        expect(cpaFields).toBeTruthy();
+        expect(cpaFields.length).toEqual(2);
+        expect(cpaFields.filter(({id}) => id === field2.id)[0].type).toEqual(field2.type);
+        expect(cpaFields.filter(({id}) => id === field2.id)[0].name).toEqual(field2.name);
+
+        // update field
+        testStore.dispatch(handleCustomAttributesUpdated({
+            event: WebSocketEvents.CPAFieldUpdated,
+            data: {
+                field: {...field1, name: 'Updated Name'},
+            },
+        }));
+
+        cpaFields = getCustomProfileAttributes(testStore.getState());
+        expect(cpaFields).toBeTruthy();
+        expect(cpaFields.length).toEqual(2);
+        expect(cpaFields.filter(({id}) => id === field1.id)[0].name).toEqual('Updated Name');
+        expect(cpaFields.filter(({id}) => id === field2.id)[0].name).toEqual(field2.name);
+
+        // delete field
+        testStore.dispatch(handleCustomAttributesDeleted({
+            event: WebSocketEvents.CPAFieldDeleted,
+            data: {
+                field_id: field1.id,
+            },
+        }));
+
+        cpaFields = getCustomProfileAttributes(testStore.getState());
+        expect(cpaFields).toBeTruthy();
+        expect(cpaFields.length).toEqual(1);
+        expect(cpaFields.filter(({id}) => id === field2.id)[0]).toBeTruthy();
+    });
+
+    describe('handleCustomAttributesUpdated', () => {
+        test('should update the CustomAttributeField in the state', () => {
+            const testStore = realConfigureStore(makeInitialState());
+
+            // First create a field
+            testStore.dispatch(handleCustomAttributesCreated({
+                event: WebSocketEvents.CPAFieldCreated,
+                data: {
+                    field: field1,
+                },
+            }));
+
+            let cpaFields = getCustomProfileAttributes(testStore.getState());
+            expect(cpaFields).toBeTruthy();
+            expect(cpaFields.length).toEqual(1);
+            expect(cpaFields.filter(({id}) => id === field1.id)[0].name).toEqual(field1.name);
+
+            // Update the field
+            const updatedField = {...field1, name: 'Updated Field Name'};
+            testStore.dispatch(handleCustomAttributesUpdated({
+                event: WebSocketEvents.CPAFieldUpdated,
+                data: {
+                    field: updatedField,
+                },
+            }));
+
+            cpaFields = getCustomProfileAttributes(testStore.getState());
+            expect(cpaFields).toBeTruthy();
+            expect(cpaFields.length).toEqual(1);
+            expect(cpaFields.filter(({id}) => id === field1.id)[0].name).toEqual('Updated Field Name');
+        });
+
+        test('should clear values when delete_values is true', () => {
+            // Set up a state with a user that has a custom profile attribute value
+            const testStore = realConfigureStore({
+                entities: {
+                    general: {},
+                    users: {
+                        profiles: {
+                            user1: {
+                                id: 'user1',
+                                custom_profile_attributes: {
+                                    [field1.id]: 'some value',
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // First create a field
+            testStore.dispatch(handleCustomAttributesCreated({
+                event: WebSocketEvents.CPAFieldCreated,
+                data: {
+                    field: field1,
+                },
+            }));
+
+            // Update the field with delete_values flag
+            const updatedField = {...field1, type: 'select'};
+            testStore.dispatch(handleCustomAttributesUpdated({
+                event: WebSocketEvents.CPAFieldUpdated,
+                data: {
+                    field: updatedField,
+                    delete_values: true,
+                },
+            }));
+
+            // Check that the field was updated
+            const cpaFields = getCustomProfileAttributes(testStore.getState());
+            expect(cpaFields).toBeTruthy();
+            expect(cpaFields.length).toEqual(1);
+            expect(cpaFields.filter(({id}) => id === field1.id)[0].type).toEqual('select');
+
+            // Check that the user's values for this field were cleared
+            const user = testStore.getState().entities.users.profiles.user1;
+            expect(user.custom_profile_attributes?.[field1.id]).toBeFalsy();
+        });
+
+        test('should not clear values when delete_values is false', () => {
+            // Set up a state with a user that has a custom profile attribute value
+            const testStore = realConfigureStore({
+                entities: {
+                    general: {},
+                    users: {
+                        profiles: {
+                            user1: {
+                                id: 'user1',
+                                custom_profile_attributes: {
+                                    [field1.id]: 'some value',
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // First create a field
+            testStore.dispatch(handleCustomAttributesCreated({
+                event: WebSocketEvents.CPAFieldCreated,
+                data: {
+                    field: field1,
+                },
+            }));
+
+            // Update the field but with delete_values flag set to false
+            const updatedField = {...field1, name: 'Updated Field Name', type: 'text'};
+            testStore.dispatch(handleCustomAttributesUpdated({
+                event: WebSocketEvents.CPAFieldUpdated,
+                data: {
+                    field: updatedField,
+                    delete_values: false,
+                },
+            }));
+
+            // Check that the field was updated
+            const cpaFields = getCustomProfileAttributes(testStore.getState());
+            expect(cpaFields).toBeTruthy();
+            expect(cpaFields.length).toEqual(1);
+            expect(cpaFields.filter(({id}) => id === field1.id)[0].name).toEqual('Updated Field Name');
+
+            // Check that the user's values for this field were NOT cleared
+            const user = testStore.getState().entities.users.profiles.user1;
+            expect(user.custom_profile_attributes).toBeTruthy();
+            expect(user.custom_profile_attributes[field1.id]).toEqual('some value');
+        });
+
+        test('should not clear values when delete_values is not specified', () => {
+            // Set up a state with a user that has a custom profile attribute value
+            const testStore = realConfigureStore({
+                entities: {
+                    general: {},
+                    users: {
+                        profiles: {
+                            user1: {
+                                id: 'user1',
+                                custom_profile_attributes: {
+                                    [field1.id]: 'some value',
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            // First create a field
+            testStore.dispatch(handleCustomAttributesCreated({
+                event: WebSocketEvents.CPAFieldCreated,
+                data: {
+                    field: field1,
+                },
+            }));
+
+            // Update the field without specifying delete_values
+            const updatedField = {...field1, type: 'number'};
+            testStore.dispatch(handleCustomAttributesUpdated({
+                event: WebSocketEvents.CPAFieldUpdated,
+                data: {
+                    field: updatedField,
+
+                    // delete_values not specified
+                },
+            }));
+
+            // Check that the field was updated
+            const cpaFields = getCustomProfileAttributes(testStore.getState());
+            expect(cpaFields).toBeTruthy();
+            expect(cpaFields.length).toEqual(1);
+            expect(cpaFields.filter(({id}) => id === field1.id)[0].type).toEqual('number');
+
+            // Check that the user's values for this field were NOT cleared
+            const user = testStore.getState().entities.users.profiles.user1;
+            expect(user.custom_profile_attributes).toBeTruthy();
+            expect(user.custom_profile_attributes[field1.id]).toEqual('some value');
+        });
     });
 });

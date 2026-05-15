@@ -7,7 +7,7 @@ import {FormattedMessage} from 'react-intl';
 export type AttachmentTextOverflowType = 'ellipsis';
 
 const MAX_POST_HEIGHT = 600;
-const MARGIN_CHANGE_FOR_COMPACT_POST = 22;
+const MARGIN_CHANGE_FOR_COMPACT_POST = 12;
 
 type Props = {
     children?: React.ReactNode;
@@ -114,8 +114,10 @@ export default class ShowMore extends React.PureComponent<Props, State> {
         let className = 'post-message';
         let collapsedMaxHeightStyle: number | undefined;
         if (isCollapsed) {
-            collapsedMaxHeightStyle = this.maxHeight;
             className += ' post-message--collapsed';
+            if (!(overflowType === 'ellipsis' && isOverflow)) {
+                collapsedMaxHeightStyle = this.maxHeight;
+            }
         } else {
             className += ' post-message--expanded';
         }

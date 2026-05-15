@@ -19,7 +19,7 @@ func (a *App) RegisterPerformanceReport(rctx request.CTX, report *model.Performa
 	for _, c := range report.Counters {
 		switch c.Metric {
 		case model.ClientLongTasks:
-			a.Metrics().IncrementClientLongTasks(commonLabels["platform"], commonLabels["agent"], c.Value)
+			a.Metrics().IncrementClientLongTasks(commonLabels["platform"], commonLabels["agent"], userID, c.Value)
 		default:
 			// we intentionally skip unknown metrics
 		}
@@ -50,22 +50,26 @@ func (a *App) RegisterPerformanceReport(rctx request.CTX, report *model.Performa
 		case model.ClientFirstContentfulPaint:
 			a.Metrics().ObserveClientFirstContentfulPaint(commonLabels["platform"],
 				commonLabels["agent"],
+				userID,
 				h.Value/1000)
 		case model.ClientLargestContentfulPaint:
 			a.Metrics().ObserveClientLargestContentfulPaint(
 				commonLabels["platform"],
 				commonLabels["agent"],
 				h.GetLabelValue("region", model.AcceptedLCPRegions, "other"),
+				userID,
 				h.Value/1000)
 		case model.ClientInteractionToNextPaint:
 			a.Metrics().ObserveClientInteractionToNextPaint(
 				commonLabels["platform"],
 				commonLabels["agent"],
 				h.GetLabelValue("interaction", model.AcceptedInteractions, "other"),
+				userID,
 				h.Value/1000)
 		case model.ClientCumulativeLayoutShift:
 			a.Metrics().ObserveClientCumulativeLayoutShift(commonLabels["platform"],
 				commonLabels["agent"],
+				userID,
 				h.Value)
 		case model.ClientPageLoadDuration:
 			a.Metrics().ObserveClientPageLoadDuration(commonLabels["platform"],
@@ -76,20 +80,24 @@ func (a *App) RegisterPerformanceReport(rctx request.CTX, report *model.Performa
 				commonLabels["platform"],
 				commonLabels["agent"],
 				h.GetLabelValue("fresh", model.AcceptedTrueFalseLabels, ""),
+				userID,
 				h.Value/1000)
 		case model.ClientTeamSwitchDuration:
 			a.Metrics().ObserveClientTeamSwitchDuration(
 				commonLabels["platform"],
 				commonLabels["agent"],
 				h.GetLabelValue("fresh", model.AcceptedTrueFalseLabels, ""),
+				userID,
 				h.Value/1000)
 		case model.ClientRHSLoadDuration:
 			a.Metrics().ObserveClientRHSLoadDuration(commonLabels["platform"],
 				commonLabels["agent"],
+				userID,
 				h.Value/1000)
 		case model.ClientGlobalThreadsLoadDuration:
 			a.Metrics().ObserveGlobalThreadsLoadDuration(commonLabels["platform"],
 				commonLabels["agent"],
+				userID,
 				h.Value/1000)
 		case model.MobileClientLoadDuration:
 			a.Metrics().ObserveMobileClientLoadDuration(commonLabels["platform"],
@@ -149,6 +157,8 @@ func (a *App) RegisterPerformanceReport(rctx request.CTX, report *model.Performa
 			a.Metrics().ObserveDesktopCpuUsage(commonLabels["platform"], commonLabels["desktop_app_version"], h.Labels["process"], h.Value)
 		case model.DesktopClientMemoryUsage:
 			a.Metrics().ObserveDesktopMemoryUsage(commonLabels["platform"], commonLabels["desktop_app_version"], h.Labels["process"], h.Value/1000)
+		case model.PluginWebappPerf:
+			a.Metrics().ObservePluginWebappPerf(commonLabels["platform"], commonLabels["agent"], h.Labels["plugin_id"], h.Labels["plugin_metric_label"], h.Value)
 		default:
 			// we intentionally skip unknown metrics
 		}

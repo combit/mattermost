@@ -16,9 +16,10 @@ import (
 )
 
 func TestCreateJob(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	th.LoginSystemManager()
-	defer th.TearDown()
+
+	th.LoginSystemManager(t)
 
 	job := &model.Job{
 		Type: model.JobTypeActiveUsers,
@@ -50,8 +51,8 @@ func TestCreateJob(t *testing.T) {
 }
 
 func TestGetJob(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	job := &model.Job{
 		Id:     model.NewId(),
@@ -86,8 +87,8 @@ func TestGetJob(t *testing.T) {
 }
 
 func TestGetJobs(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	jobType := model.JobTypeDataRetention
 
@@ -170,9 +171,10 @@ func TestGetJobs(t *testing.T) {
 }
 
 func TestGetJobsByType(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	th.LoginSystemManager()
-	defer th.TearDown()
+
+	th.LoginSystemManager(t)
 
 	jobType := model.JobTypeDataRetention
 
@@ -238,10 +240,124 @@ func TestGetJobsByType(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGetJobsByType_TeamAdminAccessControlSync(t *testing.T) {
+	mainHelper.Parallel(t)
+	th := Setup(t).InitBasic(t)
+
+	th.AddPermissionToRole(t, model.PermissionManageTeamAccessRules.Id, model.TeamAdminRoleId)
+
+	teamJob := &model.Job{
+		Id:       model.NewId(),
+		Type:     model.JobTypeAccessControlSync,
+		Status:   model.JobStatusSuccess,
+		CreateAt: model.GetMillis(),
+		Data:     map[string]string{"team_id": th.BasicTeam.Id, "policy_id": "p1"},
+	}
+	otherTeamJob := &model.Job{
+		Id:       model.NewId(),
+		Type:     model.JobTypeAccessControlSync,
+		Status:   model.JobStatusSuccess,
+		CreateAt: model.GetMillis(),
+		Data:     map[string]string{"team_id": model.NewId(), "policy_id": "p2"},
+	}
+	systemJob := &model.Job{
+		Id:       model.NewId(),
+		Type:     model.JobTypeAccessControlSync,
+		Status:   model.JobStatusSuccess,
+		CreateAt: model.GetMillis(),
+		Data:     map[string]string{"policy_id": "p3"},
+	}
+
+	for _, job := range []*model.Job{teamJob, otherTeamJob, systemJob} {
+		_, err := th.App.Srv().Store().Job().Save(job)
+		require.NoError(t, err)
+		defer func(id string) {
+			_, _ = th.App.Srv().Store().Job().Delete(id)
+		}(job.Id)
+	}
+
+	t.Run("team admin can see only their team's sync jobs", func(t *testing.T) {
+		th.LoginTeamAdmin(t)
+		defer th.LoginBasic(t)
+
+		jobs, _, err := th.Client.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 0, 60, th.BasicTeam.Id)
+		require.NoError(t, err)
+
+		require.Len(t, jobs, 1)
+		require.Equal(t, teamJob.Id, jobs[0].Id)
+	})
+
+	t.Run("team admin cannot see sync jobs without team_id", func(t *testing.T) {
+		th.LoginTeamAdmin(t)
+		defer th.LoginBasic(t)
+
+		_, resp, err := th.Client.GetJobsByType(context.Background(), model.JobTypeAccessControlSync, 0, 60)
+		require.Error(t, err)
+		CheckForbiddenStatus(t, resp)
+	})
+
+	t.Run("team admin cannot read non-sync job types with team_id", func(t *testing.T) {
+		th.LoginTeamAdmin(t)
+		defer th.LoginBasic(t)
+
+		_, resp, err := th.Client.GetJobsByTypeForTeam(context.Background(), model.JobTypeDataRetention, 0, 60, th.BasicTeam.Id)
+		require.Error(t, err)
+		CheckForbiddenStatus(t, resp)
+	})
+
+	t.Run("system admin sees all sync jobs without team_id filter", func(t *testing.T) {
+		jobs, _, err := th.SystemAdminClient.GetJobsByType(context.Background(), model.JobTypeAccessControlSync, 0, 60)
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(jobs), 3)
+	})
+
+	t.Run("system admin with team_id filter sees only that team's jobs", func(t *testing.T) {
+		jobs, _, err := th.SystemAdminClient.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 0, 60, th.BasicTeam.Id)
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+		require.Equal(t, teamJob.Id, jobs[0].Id)
+	})
+
+	t.Run("returns empty when no team-scoped jobs exist for that team", func(t *testing.T) {
+		jobs, _, err := th.SystemAdminClient.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 0, 60, model.NewId())
+		require.NoError(t, err)
+		require.Empty(t, jobs)
+	})
+
+	t.Run("pagination works correctly for team-scoped jobs", func(t *testing.T) {
+		// page=0 returns the job, page=1 returns empty (not the same page again)
+		jobs, _, err := th.SystemAdminClient.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 0, 1, th.BasicTeam.Id)
+		require.NoError(t, err)
+		require.Len(t, jobs, 1)
+
+		jobs, _, err = th.SystemAdminClient.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 1, 1, th.BasicTeam.Id)
+		require.NoError(t, err)
+		require.Empty(t, jobs)
+	})
+
+	t.Run("team admin cannot query jobs for a team they are not admin of", func(t *testing.T) {
+		th.LoginTeamAdmin(t)
+		defer th.LoginBasic(t)
+
+		otherTeamID := model.NewId()
+		_, resp, err := th.Client.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 0, 60, otherTeamID)
+		require.Error(t, err)
+		CheckForbiddenStatus(t, resp)
+	})
+
+	t.Run("malformed team_id returns 400 instead of silently dropping the filter", func(t *testing.T) {
+		// "not-a-valid-id" is not a 26-character alphanum Mattermost ID.
+		_, resp, err := th.SystemAdminClient.GetJobsByTypeForTeam(context.Background(), model.JobTypeAccessControlSync, 0, 60, "not-a-valid-id")
+		require.Error(t, err)
+		CheckBadRequestStatus(t, resp)
+	})
+}
+
 func TestDownloadJob(t *testing.T) {
-	th := Setup(t).InitBasic()
-	th.LoginSystemManager()
-	defer th.TearDown()
+	mainHelper.Parallel(t)
+	th := Setup(t).InitBasic(t)
+
+	th.LoginSystemManager(t)
 	jobName := model.NewId()
 	job := &model.Job{
 		Id:   jobName,
@@ -280,9 +396,9 @@ func TestDownloadJob(t *testing.T) {
 		require.NoError(t, delErr, "Failed to delete job %s", job.Id)
 	}()
 
-	filePath := "./data/export/" + job.Id + "/testdat.txt"
-	mkdirAllErr := os.MkdirAll(filepath.Dir(filePath), 0770)
-	require.NoError(t, mkdirAllErr)
+	filePath := filepath.Join(*th.App.Config().FileSettings.Directory, "export/"+job.Id+"/testdat.txt")
+	err = os.MkdirAll(filepath.Dir(filePath), 0770)
+	require.NoError(t, err)
 
 	_, createErr := os.Create(filePath)
 	require.NoError(t, createErr)
@@ -314,9 +430,9 @@ func TestDownloadJob(t *testing.T) {
 
 	// Now we stub the results of the job into the same directory and try to download it again
 	// This time we should successfully retrieve the results without any error
-	filePath = "./data/export/" + job.Id + ".zip"
-	mkdirAllErr = os.MkdirAll(filepath.Dir(filePath), 0770)
-	require.NoError(t, mkdirAllErr)
+	filePath = filepath.Join(*th.App.Config().FileSettings.Directory, "export/"+job.Id+".zip")
+	err = os.MkdirAll(filepath.Dir(filePath), 0770)
+	require.NoError(t, err)
 
 	_, createErr = os.Create(filePath)
 	require.NoError(t, createErr)
@@ -345,11 +461,35 @@ func TestDownloadJob(t *testing.T) {
 	_, resp, err = th.SystemAdminClient.DownloadJob(context.Background(), job.Id)
 	require.Error(t, err)
 	CheckBadRequestStatus(t, resp)
+
+	// Test the case where export_dir is not valid
+	jobName = model.NewId()
+	job = &model.Job{
+		Id:   jobName,
+		Type: model.JobTypeMessageExport,
+		Data: map[string]string{
+			"export_type":     "csv",
+			"is_downloadable": "true",
+			"export_dir":      "/bad/absolute/path",
+		},
+		Status: model.JobStatusSuccess,
+	}
+	_, err = th.App.Srv().Store().Job().Save(job)
+	require.NoError(t, err)
+	defer func() {
+		_, delErr := th.App.Srv().Store().Job().Delete(job.Id)
+		require.NoError(t, delErr, "Failed to delete job %s", job.Id)
+	}()
+
+	_, resp, err = th.SystemAdminClient.DownloadJob(context.Background(), job.Id)
+	require.Error(t, err)
+	require.EqualError(t, err, "Unable to download this job")
+	CheckNotFoundStatus(t, resp)
 }
 
 func TestCancelJob(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	jobType := model.JobTypeMessageExport
 	jobs := []*model.Job{
@@ -398,8 +538,8 @@ func TestCancelJob(t *testing.T) {
 }
 
 func TestUpdateJobStatus(t *testing.T) {
+	mainHelper.Parallel(t)
 	th := Setup(t)
-	defer th.TearDown()
 
 	jobType := model.JobTypeDataRetention
 	jobs := []*model.Job{

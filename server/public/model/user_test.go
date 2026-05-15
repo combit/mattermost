@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mattermost/mattermost/server/public/shared/mlog"
 	"github.com/mattermost/mattermost/server/public/shared/timezones"
@@ -99,7 +98,7 @@ func TestUserLogClone(t *testing.T) {
 		l := u.LogClone()
 		require.NotNil(t, l)
 
-		m, ok := l.(map[string]interface{})
+		m, ok := l.(map[string]any)
 		require.True(t, ok)
 		assert.Equal(t, "", m["remote_id"])
 	})
@@ -135,7 +134,7 @@ func TestUserLogClone(t *testing.T) {
 		}
 
 		l := u.LogClone()
-		m, ok := l.(map[string]interface{})
+		m, ok := l.(map[string]any)
 		require.True(t, ok)
 
 		expected := map[string]any{
@@ -197,10 +196,19 @@ func TestUserDeepCopy(t *testing.T) {
 	assert.Equal(t, id, copyUser.Id)
 }
 
+type stubHasherFunc func(password string) (string, error)
+
+func (f stubHasherFunc) Hash(password string) (string, error) { return f(password) }
+
 func TestUserPreSave(t *testing.T) {
+	hasher := stubHasherFunc(func(password string) (string, error) {
+		return "hashed_" + password, nil
+	})
+
 	user := User{Password: "test"}
-	err := user.PreSave()
+	err := user.PreSave(hasher)
 	require.Nil(t, err)
+	assert.Equal(t, "hashed_test", user.Password)
 	user.Etag(true, true)
 	assert.NotNil(t, user.Timezone, "Timezone is nil")
 	assert.Equal(t, user.Timezone["useAutomaticTimezone"], "true", "Timezone is not set to default")
@@ -218,9 +226,14 @@ func TestUserPreSave(t *testing.T) {
 }
 
 func TestUserPreSavePwdTooLong(t *testing.T) {
+	hasher := stubHasherFunc(func(password string) (string, error) {
+		return "", ErrPasswordTooLong
+	})
+
 	user := User{Password: strings.Repeat("1234567890", 8)}
-	err := user.PreSave()
-	assert.ErrorIs(t, err, bcrypt.ErrPasswordTooLong)
+	err := user.PreSave(hasher)
+	require.NotNil(t, err)
+	assert.Equal(t, "model.user.pre_save.password_too_long.app_error", err.Id)
 }
 
 func TestUserPreUpdate(t *testing.T) {

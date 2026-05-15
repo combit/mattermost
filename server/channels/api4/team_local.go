@@ -14,7 +14,6 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/shared/mlog"
 	"github.com/mattermost/mattermost/server/v8/channels/app/email"
-	"github.com/mattermost/mattermost/server/v8/channels/audit"
 	"github.com/mattermost/mattermost/server/v8/channels/store"
 )
 
@@ -42,8 +41,8 @@ func localDeleteTeam(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditRec := c.MakeAuditRecord("localDeleteTeam", audit.Fail)
-	audit.AddEventParameter(auditRec, "team_id", c.Params.TeamId)
+	auditRec := c.MakeAuditRecord(model.AuditEventLocalDeleteTeam, model.AuditStatusFail)
+	model.AddEventParameterToAuditRec(auditRec, "team_id", c.Params.TeamId)
 	defer c.LogAuditRec(auditRec)
 
 	if team, err := c.App.GetTeam(c.Params.TeamId); err == nil {
@@ -100,10 +99,10 @@ func localInviteUsersToTeam(c *Context, w http.ResponseWriter, r *http.Request) 
 		emailList[i] = email
 	}
 
-	auditRec := c.MakeAuditRecord("localInviteUsersToTeam", audit.Fail)
-	audit.AddEventParameterAuditable(auditRec, "member_invite", memberInvite)
+	auditRec := c.MakeAuditRecord(model.AuditEventLocalInviteUsersToTeam, model.AuditStatusFail)
+	model.AddEventParameterAuditableToAuditRec(auditRec, "member_invite", memberInvite)
 	defer c.LogAuditRec(auditRec)
-	audit.AddEventParameter(auditRec, "team_id", c.Params.TeamId)
+	model.AddEventParameterToAuditRec(auditRec, "team_id", c.Params.TeamId)
 	auditRec.AddMeta("count", len(emailList))
 	auditRec.AddMeta("emails", emailList)
 
@@ -154,10 +153,10 @@ func localInviteUsersToTeam(c *Context, w http.ResponseWriter, r *http.Request) 
 		if len(goodEmails) > 0 {
 			var invitesWithErrors2 []*model.EmailInviteWithError
 			if len(channels) > 0 {
-				invitesWithErrors2, err = c.App.Srv().EmailService.SendInviteEmailsToTeamAndChannels(team, channels, "Administrator", "mmctl "+model.NewId(), nil, goodEmails, *c.App.Config().ServiceSettings.SiteURL, nil, memberInvite.Message, true, true, false)
+				invitesWithErrors2, err = c.App.Srv().EmailService.SendInviteEmailsToTeamAndChannels(c.AppContext, team, channels, "Administrator", "mmctl "+model.NewId(), nil, goodEmails, *c.App.Config().ServiceSettings.SiteURL, nil, memberInvite.Message, true, true, false)
 				invitesWithErrors = append(invitesWithErrors, invitesWithErrors2...)
 			} else {
-				err = c.App.Srv().EmailService.SendInviteEmails(team, "Administrator", "mmctl "+model.NewId(), goodEmails, *c.App.Config().ServiceSettings.SiteURL, nil, false, true, false)
+				err = c.App.Srv().EmailService.SendInviteEmails(c.AppContext, team, "Administrator", "mmctl "+model.NewId(), goodEmails, *c.App.Config().ServiceSettings.SiteURL, nil, false, true, false)
 			}
 
 			if err != nil {
@@ -196,7 +195,7 @@ func localInviteUsersToTeam(c *Context, w http.ResponseWriter, r *http.Request) 
 			c.Err = model.NewAppError("localInviteUsersToTeam", "api.team.invite_members.invalid_email.app_error", map[string]any{"Addresses": s}, "", http.StatusBadRequest)
 			return
 		}
-		err := c.App.Srv().EmailService.SendInviteEmails(team, "Administrator", "mmctl "+model.NewId(), emailList, *c.App.Config().ServiceSettings.SiteURL, nil, false, true, false)
+		err := c.App.Srv().EmailService.SendInviteEmails(c.AppContext, team, "Administrator", "mmctl "+model.NewId(), emailList, *c.App.Config().ServiceSettings.SiteURL, nil, false, true, false)
 		if err != nil {
 			switch {
 			case errors.Is(err, email.NoRateLimiterError):
@@ -248,9 +247,9 @@ func localCreateTeam(c *Context, w http.ResponseWriter, r *http.Request) {
 
 	team.Email = strings.ToLower(team.Email)
 
-	auditRec := c.MakeAuditRecord("localCreateTeam", audit.Fail)
+	auditRec := c.MakeAuditRecord(model.AuditEventLocalCreateTeam, model.AuditStatusFail)
 	defer c.LogAuditRec(auditRec)
-	audit.AddEventParameterAuditable(auditRec, "team", &team)
+	model.AddEventParameterAuditableToAuditRec(auditRec, "team", &team)
 
 	rteam, err := c.App.CreateTeam(c.AppContext, &team)
 	if err != nil {

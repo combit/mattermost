@@ -135,11 +135,14 @@ class RhsCardHeader extends React.PureComponent<Props> {
 
         return (
             <div className='sidebar--right__header'>
-                <span className='sidebar--right__title'>
+                <span
+                    className='sidebar--right__title'
+                    id='rhsPanelTitle'
+                >
                     {back}
                     <FormattedMessage
                         id='search_header.title5'
-                        defaultMessage='Extra information'
+                        defaultMessage='Extra Information'
                     />
                 </span>
                 <div className='pull-right'>

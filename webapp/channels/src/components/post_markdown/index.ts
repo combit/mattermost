@@ -56,6 +56,10 @@ export function makeGetMentionKeysForPost(): (
     );
 }
 
+export function hasPluginTooltips(linkTooltip?: unknown[]): boolean {
+    return Boolean(linkTooltip?.length);
+}
+
 function makeMapStateToProps() {
     const getMentionKeysForPost = makeGetMentionKeysForPost();
 
@@ -73,7 +77,7 @@ function makeMapStateToProps() {
             channel,
             currentTeam,
             pluginHooks: state.plugins.components.MessageWillFormat,
-            hasPluginTooltips: Boolean(state.plugins.components.LinkTooltip),
+            hasPluginTooltips: hasPluginTooltips(state.plugins.components.LinkTooltip),
             isUserCanManageMembers: channel && canManageMembers(state, channel),
             mentionKeys: getMentionKeysForPost(state, ownProps.post, channel),
             highlightKeys: getHighlightWithoutNotificationKeys(state),
@@ -82,6 +86,7 @@ function makeMapStateToProps() {
             hideGuestTags: getConfig(state).HideGuestTags === 'true',
             isEnterpriseOrCloudOrSKUStarterFree: isEnterpriseOrCloudOrSKUStarterFree(license, subscriptionProduct, isEnterpriseReady),
             isEnterpriseReady,
+            renderEmoticonsAsEmoji: getBool(state, Preferences.CATEGORY_DISPLAY_SETTINGS, Preferences.RENDER_EMOTICONS_AS_EMOJI, Preferences.RENDER_EMOTICONS_AS_EMOJI_DEFAULT === 'true'),
         };
     };
 }

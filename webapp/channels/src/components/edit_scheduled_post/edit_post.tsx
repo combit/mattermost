@@ -7,26 +7,26 @@ import {useIntl} from 'react-intl';
 import {useDispatch, useSelector} from 'react-redux';
 
 import {EmoticonPlusOutlineIcon, InformationOutlineIcon} from '@mattermost/compass-icons/components';
-import type {Emoji} from '@mattermost/types/emojis';
+import type {Emoji, SystemEmoji} from '@mattermost/types/emojis';
 import type {Post} from '@mattermost/types/posts';
 import type {ScheduledPost} from '@mattermost/types/schedule_post';
 import {scheduledPostToPost} from '@mattermost/types/schedule_post';
 
 import {getChannel} from 'mattermost-redux/selectors/entities/channels';
 import type {ActionResult} from 'mattermost-redux/types/actions';
-import {getEmojiName} from 'mattermost-redux/utils/emoji_utils';
+import {getEmojiName, isSystemEmoji} from 'mattermost-redux/utils/emoji_utils';
 
 import {openModal} from 'actions/views/modals';
 import {getConnectionId} from 'selectors/general';
 
 import DeletePostModal from 'components/delete_post_modal';
-import DeleteScheduledPostModal
-    from 'components/drafts/draft_actions/schedule_post_actions/delete_scheduled_post_modal';
-import EmojiPickerOverlay from 'components/emoji_picker/emoji_picker_overlay';
+import DeleteScheduledPostModal from 'components/drafts/draft_actions/schedule_post_actions/delete_scheduled_post_modal';
+import useEmojiPicker from 'components/emoji_picker/use_emoji_picker';
 import Textbox from 'components/textbox';
 import type {TextboxClass, TextboxElement} from 'components/textbox';
 
 import {AppEvents, Constants, ModalIdentifiers, StoragePrefixes} from 'utils/constants';
+import {unifiedToUnicode} from 'utils/emoji_utils';
 import * as Keyboard from 'utils/keyboard';
 import type {ApplyMarkdownOptions} from 'utils/markdown/apply_markdown';
 import {applyMarkdown} from 'utils/markdown/apply_markdown';
@@ -102,9 +102,6 @@ export type State = {
 
 const {KeyCodes} = Constants;
 
-const TOP_OFFSET = 0;
-const RIGHT_OFFSET = 10;
-
 const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, scheduledPost, afterSave, onCancel, onDeleteScheduledPost, ...rest}: Props): JSX.Element | null => {
     const connectionId = useSelector(getConnectionId);
     const channel = useSelector((state: GlobalState) => getChannel(state, channelId));
@@ -123,7 +120,6 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
     const [showMentionHelper, setShowMentionHelper] = useState<boolean>(false);
 
     const textboxRef = useRef<TextboxClass>(null);
-    const emojiButtonRef = useRef<HTMLButtonElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     // using a ref here makes sure that the unmounting callback (saveDraft) is fired with the correct value.
@@ -171,10 +167,13 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
     }, []);
 
     useEffect(() => {
-        if (selectionRange.start === selectionRange.end) {
-            Utils.setCaretPosition(textboxRef.current?.getInputBox(), selectionRange.start);
-        } else {
-            Utils.setSelectionRange(textboxRef.current?.getInputBox(), selectionRange.start, selectionRange.end);
+        const textbox = textboxRef.current?.getInputBox();
+        if (textbox) {
+            if (selectionRange.start === selectionRange.end) {
+                Utils.setCaretPosition(textbox, selectionRange.start);
+            } else {
+                Utils.setSelectionRange(textbox, selectionRange.start, selectionRange.end);
+            }
         }
     }, [selectionRange]);
 
@@ -267,6 +266,7 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
     const handleEdit = async () => {
         if (scheduledPost) {
             await handleEditScheduledPost();
+            afterSave?.();
             return;
         }
 
@@ -408,7 +408,6 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
 
     const handleEditKeyPress = (e: React.KeyboardEvent) => {
         const {ctrlSend, codeBlockOnCtrlEnter} = rest;
-        const inputBox = textboxRef.current?.getInputBox();
 
         const {allowSending, ignoreKeyPress} = postMessageOnKeyPress(
             e,
@@ -417,7 +416,6 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
             codeBlockOnCtrlEnter,
             Date.now(),
             0,
-            inputBox.selectionStart,
         );
 
         if (ignoreKeyPress) {
@@ -503,23 +501,24 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
         }
     };
 
-    const hideEmojiPicker = () => {
-        setShowEmojiPicker(false);
-        textboxRef.current?.focus();
-    };
-
     const handleEmojiClick = (emoji?: Emoji) => {
         if (!emoji) {
             return;
         }
 
-        const emojiAlias = getEmojiName(emoji);
-        if (!emojiAlias) {
-            //Oops.. There went something wrong
-            return;
+        let emojiText: string;
+        if (isSystemEmoji(emoji)) {
+            emojiText = unifiedToUnicode((emoji as SystemEmoji).unified);
+        } else {
+            const emojiAlias = getEmojiName(emoji);
+            if (!emojiAlias) {
+                return;
+            }
+            emojiText = `:${emojiAlias}:`;
         }
 
-        let newMessage = `:${emojiAlias}: `;
+        const isUnicode = isSystemEmoji(emoji);
+        let newMessage = isUnicode ? emojiText : `${emojiText} `;
         let newCaretPosition = newMessage.length;
 
         if (editText.length > 0) {
@@ -528,10 +527,13 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
                 editText,
             );
 
-            // check whether the first piece of the message is empty when cursor
-            // is placed at beginning of message and avoid adding an empty string at the beginning of the message
-            newMessage = firstPiece === '' ? `:${emojiAlias}: ${lastPiece}` : `${firstPiece} :${emojiAlias}: ${lastPiece}`;
-            newCaretPosition = firstPiece === '' ? `:${emojiAlias}: `.length : `${firstPiece} :${emojiAlias}: `.length;
+            if (isUnicode) {
+                newMessage = firstPiece + emojiText + lastPiece;
+                newCaretPosition = firstPiece.length + emojiText.length;
+            } else {
+                newMessage = firstPiece === '' ? `${emojiText} ${lastPiece}` : `${firstPiece} ${emojiText} ${lastPiece}`;
+                newCaretPosition = firstPiece === '' ? `${emojiText} `.length : `${firstPiece} ${emojiText} `.length;
+            }
         }
 
         draftRef.current = {
@@ -570,35 +572,37 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
         }
     };
 
-    const getEmojiTargetRef = useCallback(() => emojiButtonRef.current, [emojiButtonRef]);
+    const {
+        emojiPicker,
+        getReferenceProps,
+        setReference,
+    } = useEmojiPicker({
+        showEmojiPicker,
+        setShowEmojiPicker,
 
-    let emojiPicker = null;
+        enableGifPicker: config.EnableGifPicker === 'true',
+        onGifClick: handleGifClick,
+        onEmojiClick: handleEmojiClick,
+    });
 
+    let emojiPickerControls = null;
     if (config.EnableEmojiPicker === 'true') {
-        emojiPicker = (
+        emojiPickerControls = (
             <>
-                <EmojiPickerOverlay
-                    show={showEmojiPicker}
-                    target={getEmojiTargetRef}
-                    onHide={hideEmojiPicker}
-                    onEmojiClick={handleEmojiClick}
-                    onGifClick={handleGifClick}
-                    enableGifPicker={config.EnableGifPicker === 'true'}
-                    topOffset={TOP_OFFSET}
-                    rightOffset={RIGHT_OFFSET}
-                />
                 <button
                     aria-label={formatMessage({id: 'emoji_picker.emojiPicker.button.ariaLabel', defaultMessage: 'select an emoji'})}
                     id='editPostEmoji'
-                    ref={emojiButtonRef}
+                    ref={setReference}
                     className='style--none post-action'
                     onClick={toggleEmojiPicker}
+                    {...getReferenceProps()}
                 >
                     <EmoticonPlusOutlineIcon
                         size={18}
                         color='currentColor'
                     />
                 </button>
+                {emojiPicker}
             </>
         );
     }
@@ -637,7 +641,7 @@ const EditPost = ({editingPost, actions, canEditPost, config, channelId, draft, 
                 useChannelMentions={rest.useChannelMentions}
             />
             <div className='post-body__actions'>
-                {emojiPicker}
+                {emojiPickerControls}
             </div>
             { showMentionHelper ? (
                 <div className='post-body__info'>
